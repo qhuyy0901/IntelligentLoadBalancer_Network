@@ -1,0 +1,25 @@
+{
+  "name": "intelligent-load-balancer",
+  "version": "1.0.0",
+  "description": "Intelligent Load Balancing system simulating AWS EC2 + ELB with real-time dashboard",
+  "main": "lb-server/index.js",
+  "scripts": {
+    "start": "concurrently --names \"EC2-1,EC2-2,EC2-3,LB\" --prefix-colors \"cyan,blue,yellow,green\" \"node servers/ec2-1/index.js\" \"node servers/ec2-2/index.js\" \"node servers/ec2-3/index.js\" \"node lb-server/index.js\"",
+    "ec2-1": "node servers/ec2-1/index.js",
+    "ec2-2": "node servers/ec2-2/index.js",
+    "ec2-3": "node servers/ec2-3/index.js",
+    "lb": "node lb-server/index.js",
+    "dashboard": "npx serve dashboard -p 4000 --no-clipboard",
+    "test-traffic": "node scripts/testTraffic.js"
+  },
+  "dependencies": {
+    "concurrently": "^8.2.2",
+    "express": "^4.18.2",
+    "http-proxy": "^1.18.1",
+    "ws": "^8.16.0",
+    "cors": "^2.8.5",
+    "chalk": "^4.1.2"
+  },
+  "author": "Student Project",
+  "license": "MIT"
+}

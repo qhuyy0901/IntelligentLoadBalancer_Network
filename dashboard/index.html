@@ -1,0 +1,128 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Intelligent Load Balancing – Dashboard</title>
+  <meta name="description" content="Real-time dashboard for monitoring Intelligent Load Balancer distributing traffic across EC2 instances." />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="css/style.css" />
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.2/dist/chart.umd.min.js"></script>
+</head>
+<body>
+
+  <!-- ===== HEADER ===== -->
+  <header class="header">
+    <div class="header-left">
+      <div class="header-logo">
+        <svg width="28" height="28" viewBox="0 0 28 28" fill="none">
+          <rect x="3" y="12" width="22" height="4" rx="2" fill="#7dd3fc"/>
+          <rect x="1" y="4" width="8" height="6" rx="2" fill="#38bdf8"/>
+          <rect x="10" y="4" width="8" height="6" rx="2" fill="#38bdf8"/>
+          <rect x="19" y="4" width="8" height="6" rx="2" fill="#38bdf8"/>
+          <rect x="4" y="18" width="5" height="6" rx="1.5" fill="#0ea5e9"/>
+          <rect x="11.5" y="18" width="5" height="6" rx="1.5" fill="#0ea5e9"/>
+          <rect x="19" y="18" width="5" height="6" rx="1.5" fill="#0ea5e9"/>
+        </svg>
+        <span class="header-title">Intelligent Load Balancing</span>
+      </div>
+    </div>
+    <nav class="header-nav">
+      <a href="#" class="nav-link active" id="nav-overview">Overview</a>
+      <a href="#" class="nav-link" id="nav-settings">Settings ↗</a>
+      <a href="#" class="nav-link nav-admin">⚙ Admin</a>
+    </nav>
+  </header>
+
+  <!-- ===== MAIN ===== -->
+  <main class="main">
+
+    <!-- Alert Banner -->
+    <div class="alert-banner" id="alertBanner">
+      <div class="alert-icon">✓</div>
+      <div class="alert-text">
+        Load balancer is <strong>running</strong> and distributing traffic to EC2 servers.
+      </div>
+      <button class="alert-close" id="alertClose">✕</button>
+    </div>
+
+    <!-- ===== TOP GRID: Server Status + Traffic Distribution ===== -->
+    <div class="grid-top">
+
+      <!-- Server Status Card -->
+      <div class="card" id="serverStatusCard">
+        <h2 class="card-title">Server Status</h2>
+        <table class="server-table" id="serverTable">
+          <thead>
+            <tr>
+              <th>Instance</th>
+              <th>Status</th>
+              <th>Requests Handled</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody id="serverTableBody">
+            <!-- Populated by JS -->
+          </tbody>
+        </table>
+        <div class="card-footer">
+          <button class="btn-outline" id="btnAllDetails">Details</button>
+        </div>
+      </div>
+
+      <!-- Traffic Distribution Card -->
+      <div class="card" id="trafficCard">
+        <h2 class="card-title">Traffic Distribution</h2>
+        <div class="chart-wrapper">
+          <canvas id="trafficChart"></canvas>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- ===== RECENT REQUESTS ===== -->
+    <div class="card" id="recentRequestsCard">
+      <div class="card-header-row">
+        <h2 class="card-title">Recent Requests</h2>
+        <button class="btn-primary" id="refreshBtn">↻ Refresh</button>
+      </div>
+
+      <table class="requests-table" id="requestsTable">
+        <thead>
+          <tr>
+            <th>Time</th>
+            <th>Client IP</th>
+            <th>Handled By</th>
+            <th>Requests</th>
+          </tr>
+        </thead>
+        <tbody id="requestsTableBody">
+          <!-- Populated by JS -->
+        </tbody>
+      </table>
+
+      <div class="table-footer">
+        <span id="lastUpdated">Last updated: connecting...</span>
+        <button class="btn-primary" id="refreshBtn2">↻ Refresh</button>
+      </div>
+    </div>
+
+  </main>
+
+  <!-- Modal: Server Details -->
+  <div class="modal-overlay hidden" id="modalOverlay">
+    <div class="modal" id="detailModal">
+      <div class="modal-header">
+        <h3 id="modalTitle">Server Details</h3>
+        <button class="modal-close" id="modalClose">✕</button>
+      </div>
+      <div class="modal-body" id="modalBody"></div>
+    </div>
+  </div>
+
+  <script src="js/ws.js"></script>
+  <script src="js/chart-init.js"></script>
+  <script src="js/app.js"></script>
+</body>
+</html>
