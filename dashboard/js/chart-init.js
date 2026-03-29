@@ -1,11 +1,11 @@
 /**
  * Khởi Tạo Biểu Đồ Phân Phối Lưu Lượng (Traffic Distribution)
- * Biểu đồ đường thời gian thực dùng Chart.js — cửa sổ 20 điểm
+ * Biểu đồ đường thời gian thực dùng Chart.js — cửa sổ 45 điểm
  */
 
-const MAX_POINTS = 20; // Số điểm dữ liệu hiển thị trên biểu đồ
+const MAX_POINTS = 45; // Số điểm dữ liệu hiển thị trên biểu đồ (mỗi điểm ~1s)
 
-// Nhãn trục X: từ -20s đến Now
+// Nhãn trục X: từ -45s đến Now
 const labels = Array.from({ length: MAX_POINTS }, (_, i) => `-${MAX_POINTS - i} s`);
 labels[MAX_POINTS - 1] = 'Now';
 
@@ -23,6 +23,12 @@ const dataQueues = {
   'ec2-3': new Array(MAX_POINTS).fill(0)
 };
 
+const previousRequestCounts = {
+  'ec2-1': null,
+  'ec2-2': null,
+  'ec2-3': null
+};
+
 let trafficChart;
 
 function initChart() {
@@ -37,33 +43,33 @@ function initChart() {
           data: [...dataQueues['ec2-1']],
           borderColor: DATA_COLORS['ec2-1'],
           backgroundColor: DATA_COLORS['ec2-1'] + '18',
-          borderWidth: 2,
+          borderWidth: 2.5,
           pointRadius: 0,           // Ẩn điểm tròn để biểu đồ gọn hơn
           pointHoverRadius: 4,      // Hiện khi di chuột
           tension: 0.4,             // Đường cong mượt
-          fill: false
+          fill: true
         },
         {
           label: 'EC2-2',
           data: [...dataQueues['ec2-2']],
           borderColor: DATA_COLORS['ec2-2'],
           backgroundColor: DATA_COLORS['ec2-2'] + '18',
-          borderWidth: 2,
+          borderWidth: 2.5,
           pointRadius: 0,
           pointHoverRadius: 4,
           tension: 0.4,
-          fill: false
+          fill: true
         },
         {
           label: 'EC2-3',
           data: [...dataQueues['ec2-3']],
           borderColor: DATA_COLORS['ec2-3'],
           backgroundColor: DATA_COLORS['ec2-3'] + '18',
-          borderWidth: 2,
+          borderWidth: 2.5,
           pointRadius: 0,
           pointHoverRadius: 4,
           tension: 0.4,
-          fill: false
+          fill: true
         }
       ]
     },
@@ -92,8 +98,8 @@ function initChart() {
           titleColor: '#e8edf5',
           bodyColor: '#8fa3c0',
           callbacks: {
-            // Hiển thị số request thay vì số thập phân req/s
-            label: ctx => ` ${ctx.dataset.label}: ${ctx.parsed.y} req`
+            // Hien thi so request moi trong moi giay
+            label: ctx => ` ${ctx.dataset.label}: ${ctx.parsed.y} req/s`
           }
         }
       },
@@ -114,7 +120,7 @@ function initChart() {
           },
           title: {
             display: true,
-            text: 'Requests / 2s',  // Số request trong cửa sổ 2 giây
+            text: 'Requests / second',
             color: '#5a78a0',
             font: { size: 11 }
           },
@@ -127,7 +133,7 @@ function initChart() {
 }
 
 /**
- * Đẩy giá trị RPS mới vào hàng đợi và dịch biểu đồ về bên trái
+ * Đẩy số request moi theo tung giay vao hang doi va dich bieu do ve ben trai
  * Được gọi bởi app.js mỗi khi nhận dữ liệu từ WebSocket
  */
 function updateChart(servers) {
@@ -141,7 +147,16 @@ function updateChart(servers) {
     if (idx === undefined) return; // Bỏ qua server không nhận ra
     const queue = dataQueues[s.id];
     if (!queue) return;
-    queue.push(s.rps);                                      // Thêm điểm mới
+
+    const currentCount = Number(s.requestCount || 0);
+    const previousCount = previousRequestCounts[s.id];
+    let reqPerSecond = 0;
+    if (previousCount != null) {
+      reqPerSecond = Math.max(0, currentCount - previousCount);
+    }
+    previousRequestCounts[s.id] = currentCount;
+
+    queue.push(reqPerSecond);                               // Them diem moi
     if (queue.length > MAX_POINTS) queue.shift();           // Xóa điểm cũ nhất
     trafficChart.data.datasets[idx].data = [...queue];      // Cập nhật dataset
   });

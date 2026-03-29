@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Intelligent Load Balancing – Dashboard</title>
+  <title>Intelligent Load Balancing - Dashboard</title>
   <meta name="description" content="Real-time dashboard for monitoring Intelligent Load Balancer distributing traffic across EC2 instances." />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet" />
@@ -30,8 +30,8 @@
     </div>
     <nav class="header-nav">
       <a href="#" class="nav-link active" id="nav-overview">Overview</a>
-      <a href="#" class="nav-link" id="nav-settings">Settings ↗</a>
-      <a href="#" class="nav-link nav-admin">⚙ Admin</a>
+      <a href="#" class="nav-link" id="nav-target-group">Target Group</a>
+      <a href="#" class="nav-link" id="nav-traffic">Traffic</a>
     </nav>
   </header>
 
@@ -47,12 +47,48 @@
       <button class="alert-close" id="alertClose">✕</button>
     </div>
 
+    <section class="performance-strip" aria-label="Live load balancing metrics">
+      <div class="metric-card metric-primary">
+        <div class="metric-label">Request Rate</div>
+        <div class="metric-value" id="metricThroughput">0.00 req/s</div>
+        <div class="metric-subtext" id="metricThroughputHint">requests per second through ELB</div>
+      </div>
+      <div class="metric-card">
+        <div class="metric-label">Avg Latency</div>
+        <div class="metric-value" id="metricAvgLatency">0 ms</div>
+        <div class="metric-subtext" id="metricAvgLatencyHint">mean response time in current window</div>
+      </div>
+      <div class="metric-card">
+        <div class="metric-label">P99 Latency</div>
+        <div class="metric-value" id="metricP95Latency">0 ms</div>
+        <div class="metric-subtext" id="metricP95LatencyHint">tail latency (99th percentile)</div>
+      </div>
+      <div class="metric-card">
+        <div class="metric-label">Error Rate</div>
+        <div class="metric-value" id="metricPacketLoss">0.00%</div>
+        <div class="metric-subtext" id="metricPacketLossHint">proxy failures in current window</div>
+      </div>
+      <div class="metric-card">
+        <div class="metric-label">Success Rate</div>
+        <div class="metric-value" id="metricSuccessRate">100.00%</div>
+        <div class="metric-subtext" id="metricSuccessRateHint">successful routed requests</div>
+      </div>
+      <div class="metric-card metric-compact">
+        <div class="metric-label">Live Mode</div>
+        <div class="metric-badge-row">
+          <span class="metric-badge" id="metricAlgorithm">ROUND-ROBIN</span>
+          <span class="metric-badge metric-badge-soft" id="metricPoolHealth">3/3 healthy</span>
+        </div>
+        <div class="metric-subtext" id="metricModeHint">current load balancer configuration</div>
+      </div>
+    </section>
+
     <!-- ===== TOP GRID: Server Status + Traffic Distribution ===== -->
     <div class="grid-top">
 
       <!-- Server Status Card -->
       <div class="card" id="serverStatusCard">
-        <h2 class="card-title">Server Status</h2>
+        <h2 class="card-title">EC2 Instances (Simulated)</h2>
         <table class="server-table" id="serverTable">
           <thead>
             <tr>
@@ -73,7 +109,10 @@
 
       <!-- Traffic Distribution Card -->
       <div class="card" id="trafficCard">
-        <h2 class="card-title">Traffic Distribution</h2>
+        <div class="card-header-row">
+          <h2 class="card-title">Traffic Distribution Test</h2>
+          <button class="btn-primary" id="btnGenerateTraffic">Generate Traffic</button>
+        </div>
         <div class="chart-wrapper">
           <canvas id="trafficChart"></canvas>
         </div>
@@ -84,7 +123,7 @@
     <!-- ===== RECENT REQUESTS ===== -->
     <div class="card" id="recentRequestsCard">
       <div class="card-header-row">
-        <h2 class="card-title">Recent Requests</h2>
+        <h2 class="card-title">Recent Requests Through ELB</h2>
         <button class="btn-primary" id="refreshBtn">↻ Refresh</button>
       </div>
 

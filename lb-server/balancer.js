@@ -129,6 +129,24 @@ function getSupportedAlgorithms() {
   return [...SUPPORTED_ALGORITHMS];
 }
 
+function setServerEnabled(serverId, enabled) {
+  const server = config.servers.find((item) => item.id === serverId);
+  if (!server) return false;
+
+  server.enabled = enabled;
+  if (serverStates[serverId]) serverStates[serverId].enabled = enabled;
+  return true;
+}
+
+function getServersConfig() {
+  return config.servers.map((server) => ({
+    id: server.id,
+    name: server.name,
+    enabled: server.enabled !== false,
+    weight: normalizeWeight(server)
+  }));
+}
+
 // Tăng số kết nối đang hoạt động của server
 function incrementConnections(serverId) {
   if (serverStates[serverId]) serverStates[serverId].activeConnections++;
@@ -160,6 +178,8 @@ module.exports = {
   getAlgorithm,
   setAlgorithm,
   getSupportedAlgorithms,
+  setServerEnabled,
+  getServersConfig,
   updateServerStatus,
   incrementConnections,
   decrementConnections,

@@ -11,12 +11,14 @@ const {
   getAlgorithm,
   setAlgorithm,
   getSupportedAlgorithms,
+  setServerEnabled,
+  getServersConfig,
   incrementConnections,
   decrementConnections,
   incrementRequestCount
 } = require('./balancer');
 const { startHealthChecks } = require('./healthCheck');
-const { logRequest, getRates } = require('./logger');
+const { logRequest, logFailure, getRates, getLoadBalancingMetrics } = require('./logger');
 const { startWebSocketServer } = require('./wsServer');
 
 const LB_PORT = config.loadBalancer.port || 3000;
@@ -25,6 +27,7 @@ const proxy = httpProxy.createProxyServer({});
 // Xử lý lỗi proxy — trả về 502 Bad Gateway nếu không đến được server đích
 proxy.on('error', (err, req, res) => {
   console.error('[LB] Lỗi proxy:', err.message);
+  logFailure();
   if (!res.headersSent) {
     res.writeHead(502, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify({ error: 'Bad Gateway', message: 'Server đích không phản hồi' }));
@@ -50,7 +53,13 @@ const server = http.createServer((req, res) => {
     const states = require('./balancer').getServerStates();
     const recent = require('./logger').getRecentRequests(20);
     res.setHeader('Content-Type', 'application/json');
-    res.end(JSON.stringify({ servers: states, recentRequests: recent, rates: getRates() }));
+    res.end(JSON.stringify({
+      servers: states,
+      recentRequests: recent,
+      rates: getRates(),
+      metrics: getLoadBalancingMetrics(),
+      algorithm: getAlgorithm()
+    }));
     return;
   }
 
@@ -59,7 +68,8 @@ const server = http.createServer((req, res) => {
     res.setHeader('Content-Type', 'application/json');
     res.end(JSON.stringify({
       algorithm: getAlgorithm(),
-      supportedAlgorithms: getSupportedAlgorithms()
+      supportedAlgorithms: getSupportedAlgorithms(),
+      servers: getServersConfig()
     }));
     return;
   }
@@ -89,10 +99,34 @@ const server = http.createServer((req, res) => {
     return;
   }
 
+  if (req.url.startsWith('/lb/config/server') && req.method === 'POST') {
+    const parsed = new URL(req.url, `http://${req.headers.host || `localhost:${LB_PORT}`}`);
+    const serverId = parsed.searchParams.get('id');
+    const enabledValue = parsed.searchParams.get('enabled');
+
+    if (!serverId || enabledValue == null) {
+      res.writeHead(400, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: 'Bad Request', message: 'Thiếu query param: id hoặc enabled' }));
+      return;
+    }
+
+    const enabled = enabledValue === 'true';
+    if (!setServerEnabled(serverId, enabled)) {
+      res.writeHead(404, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: 'Not Found', message: 'Không tìm thấy server' }));
+      return;
+    }
+
+    res.setHeader('Content-Type', 'application/json');
+    res.end(JSON.stringify({ ok: true, servers: getServersConfig() }));
+    return;
+  }
+
   // Chọn server tiếp theo theo thuật toán cân bằng tải
   const target = getNextServer();
   if (!target) {
     // Không có server nào khả dụng → trả lỗi 503
+    logFailure();
     res.writeHead(503, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify({ error: 'Service Unavailable', message: 'Không có server nào hoạt động' }));
     return;

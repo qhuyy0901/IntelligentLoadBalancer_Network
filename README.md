@@ -1,96 +1,120 @@
-# Intelligent Load Balancer
+# Intelligent Load Balancing
 
-> Dự án cơ sở môn Mạng Máy Tính — Phân phối lưu lượng thông minh với Node.js
+Do an co so mon Mang May Tinh theo huong AWS simulation:
+- Deploy nhieu EC2 server (mo phong local)
+- Cau hinh Load Balancer
+- Tao Target Group
+- Test phan phoi traffic va failover
 
-## 📁 Cấu trúc dự án
+## Doi chieu yeu cau de tai
+
+1. Deploy nhieu EC2 server: Dat
+2. Cau hinh Load Balancer: Dat
+3. Tao Target Group: Dat (mo phong bang file config)
+4. ELB: Dat (Node.js ELB simulation)
+5. Test traffic distribution: Dat (curl test + script test)
+
+## Kien truc mo phong AWS
+
+- EC2 instances (simulate):
+	- EC2-1: localhost:3001
+	- EC2-2: localhost:3002
+	- EC2-3: localhost:3003
+- Target Group (simulate): nhom server duoc quan ly trong file config
+- ELB (simulate): Node.js Load Balancer tai localhost:3000
+- Health Check: ping /health dinh ky de loai server loi
+
+## Cau truc du an
 
 ```
 IntelligentLoadBalancer/
-├── config/servers.json      # Cấu hình EC2 servers
-├── lb-server/               # Load Balancer core (port 3000)
-│   ├── index.js             # HTTP Proxy entry point
-│   ├── balancer.js          # Thuật toán Round-Robin / Least-Connection
-│   ├── healthCheck.js       # Kiểm tra sức khỏe server định kỳ
-│   ├── logger.js            # Ghi log request, tính request/sec
-│   └── wsServer.js          # WebSocket – push live data cho dashboard
-├── servers/                 # 3 EC2 server giả lập
-│   ├── ec2-1/index.js       # port 3001
-│   ├── ec2-2/index.js       # port 3002
-│   └── ec2-3/index.js       # port 3003
-├── dashboard/               # Giao diện web real-time
-│   ├── index.html
-│   ├── css/style.css
-│   └── js/ (app.js, chart-init.js, ws.js)
-├── scripts/testTraffic.js   # Script kiểm tra phân phối
-└── package.json
+|- config/servers.json      # Target Group simulate
+|- lb-server/               # ELB simulate (Node.js)
+|- servers/                 # EC2 simulate
+|- dashboard/               # Giao dien theo doi realtime
+|- scripts/testTraffic.js   # Script test chia tai
+`- package.json
 ```
 
-## 🚀 Cài đặt & Khởi chạy
+## Chay he thong
 
-### 1. Cài đặt dependencies
 ```bash
 cd e:\IntelligentLoadBalancer
 npm install
-```
-
-### 2. Chạy toàn bộ hệ thống
-```bash
 npm start
 ```
-Lệnh này sẽ khởi động **đồng thời**: 3 EC2 servers + Load Balancer.
 
-### 3. Mở Dashboard
+`npm start` se khoi dong dong thoi EC2-1, EC2-2, EC2-3 va Load Balancer.
+
+Neu can dashboard:
+
 ```bash
-# Terminal mới:
-npx serve dashboard -p 4000
+npm run dashboard
 ```
-Truy cập: **http://localhost:4000**
 
-## 🧪 Kiểm tra phân phối traffic
+Dashboard: http://localhost:4000
+
+## Target Group (simulate)
+
+File cau hinh: `config/servers.json`
+
+```json
+"servers": [
+	{ "id": "ec2-1", "host": "localhost", "port": 3001 },
+	{ "id": "ec2-2", "host": "localhost", "port": 3002 },
+	{ "id": "ec2-3", "host": "localhost", "port": 3003 }
+]
+```
+
+Trong buoi demo, trinh bay ro: day la Target Group mo phong.
+
+## Test phan phoi traffic
+
+### Test thu cong
 
 ```bash
-# Gửi 30 request (5 concurrent)
+curl http://localhost:3000
+```
+
+Lap lai nhieu lan, truong `server` trong response se luan phien giua EC2-1/2/3.
+
+### Test spam request
+
+Windows CMD:
+
+```bat
+for /l %i in (1,1,20) do curl http://localhost:3000
+```
+
+PowerShell:
+
+```powershell
+1..20 | ForEach-Object { curl http://localhost:3000 }
+```
+
+Hoac dung script san co:
+
+```bash
 npm run test-traffic
-
-# Hoặc tùy chỉnh:
-node scripts/testTraffic.js 100 10
 ```
 
-## 🌐 Các Endpoints
+## Test failover (diem cong)
 
-| Endpoint | Mô tả |
-|---|---|
-| `http://localhost:3000` | Load Balancer (proxy) |
-| `http://localhost:3001` | EC2-1 trực tiếp |
-| `http://localhost:3002` | EC2-2 trực tiếp |
-| `http://localhost:3003` | EC2-3 trực tiếp |
-| `http://localhost:3000/lb/stats` | API stats của LB |
-| `http://localhost:3000/lb/config` | Xem thuật toán LB hiện tại + danh sách hỗ trợ |
-| `http://localhost:3000/lb/config/algorithm?name=weighted-round-robin` | Đổi thuật toán LB khi đang chạy (POST) |
-| `ws://localhost:8080` | WebSocket live data |
-| `http://localhost:4000` | Dashboard UI |
+1. Tat 1 EC2 (vi du dung process EC2-2)
+2. Spam request lai
+3. Quan sat LB van phuc vu bang cac server con song
+4. Health check tu dong danh dau node loi la down
 
-## ⚙️ Cấu hình
+## API nhanh cho demo
 
-Chỉnh sửa `config/servers.json` để:
-- Thêm/xóa server
-- Đổi thuật toán: `round-robin`, `least-connections`, `weighted-round-robin`
-- Thay đổi health check interval
+- `GET /lb/config`: xem thuat toan va pool
+- `POST /lb/config/algorithm?name=round-robin`: doi thuat toan
+- `POST /lb/config/server?id=ec2-2&enabled=false`: loai server khoi target group simulate
+- `POST /lb/config/server?id=ec2-2&enabled=true`: them lai vao target group
 
-Đổi thuật toán ngay khi đang chạy (không cần restart):
+## Cau tra loi ngan gon khi bao ve
 
-```bash
-# Xem cấu hình hiện tại
-curl http://localhost:3000/lb/config
-
-# Chuyển sang weighted round robin
-curl -X POST "http://localhost:3000/lb/config/algorithm?name=weighted-round-robin"
-```
-
-## 📚 Kiến thức áp dụng
-
-- **Round-Robin**: Phân phối lần lượt đều cho các server
-- **Health Check**: Tự động loại server bị down ra khỏi pool
-- **HTTP Proxy**: Chuyển tiếp request trong suốt
-- **WebSocket**: Cập nhật dashboard real-time
-- **Elastic Load Balancer**: Mô phỏng AWS ELB
+- EC2 servers duoc mo phong bang cac Node.js services rieng.
+- Target Group duoc quan ly trong `config/servers.json`.
+- ELB duoc mo phong bang Node.js proxy + health check + routing.
+- He thong phan phoi tai theo Round Robin va co failover khi node loi.

@@ -4,7 +4,8 @@
     "wsPort": 8080,
     "algorithm": "round-robin",
     "healthCheckInterval": 5000,
-    "logBufferSize": 100
+    "logBufferSize": 100,
+    "distributionWindowMs": 8000
   },
   "servers": [
     {

@@ -1,7 +1,7 @@
 {
   "name": "intelligent-load-balancer",
   "version": "1.0.0",
-  "description": "Intelligent Load Balancing system simulating AWS EC2 + ELB with real-time dashboard",
+  "description": "Intelligent Load Balancing project simulating AWS EC2 + ELB with traffic distribution and failover demo",
   "main": "lb-server/index.js",
   "scripts": {
     "start": "concurrently --names \"EC2-1,EC2-2,EC2-3,LB\" --prefix-colors \"cyan,blue,yellow,green\" \"node servers/ec2-1/index.js\" \"node servers/ec2-2/index.js\" \"node servers/ec2-3/index.js\" \"node lb-server/index.js\"",
@@ -13,12 +13,12 @@
     "test-traffic": "node scripts/testTraffic.js"
   },
   "dependencies": {
+    "chalk": "^4.1.2",
     "concurrently": "^8.2.2",
+    "cors": "^2.8.5",
     "express": "^4.18.2",
     "http-proxy": "^1.18.1",
-    "ws": "^8.16.0",
-    "cors": "^2.8.5",
-    "chalk": "^4.1.2"
+    "ws": "^8.16.0"
   },
   "author": "Student Project",
   "license": "MIT"
