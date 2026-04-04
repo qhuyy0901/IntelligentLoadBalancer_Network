@@ -3,6 +3,10 @@
  * Nhận sự kiện lb-stats từ ws.js và cập nhật toàn bộ giao diện
  */
 
+// ── LB API base URL — dùng host hiện tại để hoạt động cả local lẫn EC2 public
+const LB_PORT = 8000;
+const LB_API_BASE = `http://${window.location.hostname}:${LB_PORT}`;
+
 // ── Bảng màu tương ứng từng EC2 server ────────────────────────────────────
 const COLORS = {
   'ec2-1': '#2dd4bf',
@@ -55,7 +59,7 @@ if (generateBtn) {
     for (let i = 0; i < totalRequests; i += 1) {
       const task = new Promise((resolve) => {
         setTimeout(() => {
-          fetch('http://localhost:3000')
+          fetch(LB_API_BASE)
             .catch(() => null)
             .finally(resolve);
         }, i * 80);
@@ -73,7 +77,7 @@ if (generateBtn) {
 async function toggleServer(serverId, currentEnabled) {
   const newEnabled = !currentEnabled;
   try {
-    await fetch(`http://localhost:3000/lb/config/server?id=${encodeURIComponent(serverId)}&enabled=${newEnabled}`, { method: 'POST' });
+    await fetch(`${LB_API_BASE}/lb/config/server?id=${encodeURIComponent(serverId)}&enabled=${newEnabled}`, { method: 'POST' });
   } catch (e) {
     console.warn('[toggleServer] Không thể kết nối đến LB:', e);
   }
@@ -261,7 +265,7 @@ const ipHistory = {};
 
 function renderRequestsTable(requests) {
   if (!requests || requests.length === 0) {
-    requestsTableBody.innerHTML = `<tr><td colspan="4" style="color:var(--text-muted);text-align:center;padding:24px">Chưa có request — hãy gửi traffic đến http://localhost:3000</td></tr>`;
+    requestsTableBody.innerHTML = `<tr><td colspan="4" style="color:var(--text-muted);text-align:center;padding:24px">Chưa có request — hãy gửi traffic đến ${LB_API_BASE}</td></tr>`;
     return;
   }
 

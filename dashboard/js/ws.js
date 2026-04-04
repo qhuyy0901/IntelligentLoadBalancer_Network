@@ -1,9 +1,11 @@
 /**
  * WebSocket Client — Kết nối nhận dữ liệu thời gian thực từ Load Balancer
  * Tự động kết nối lại nếu bị mất kết nối
+ * WS_URL tự động dùng host hiện tại → hoạt động cả local lẫn EC2 public
  */
 
-const WS_URL = 'ws://localhost:8080';
+const WS_PORT = 9090;
+const WS_URL = `ws://${window.location.hostname}:${WS_PORT}`;
 let ws;
 let reconnectTimer;
 
