@@ -11,9 +11,9 @@
     {
       "id": "ec2-1",
       "name": "EC2-1",
-      "host": "localhost",
-      "port": 3001,
-      "domain": "ec2-1.local",
+      "host": "3.107.233.161",
+      "port": 3000,
+      "domain": "ec2-1.aws",
       "weight": 1,
       "enabled": true,
       "color": "#2dd4bf"
@@ -21,9 +21,9 @@
     {
       "id": "ec2-2",
       "name": "EC2-2",
-      "host": "localhost",
-      "port": 3002,
-      "domain": "ec2-2.local",
+      "host": "13.210.108.168",
+      "port": 3000,
+      "domain": "ec2-2.aws",
       "weight": 1,
       "enabled": true,
       "color": "#3b82f6"
@@ -31,9 +31,9 @@
     {
       "id": "ec2-3",
       "name": "EC2-3",
-      "host": "localhost",
-      "port": 3003,
-      "domain": "ec2-3.local",
+      "host": "15.134.221.126",
+      "port": 3000,
+      "domain": "ec2-3.aws",
       "weight": 1,
       "enabled": true,
       "color": "#f59e0b"
