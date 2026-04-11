@@ -166,3 +166,31 @@ function updateChart(servers) {
 // Khởi tạo biểu đồ khi DOM đã sẵn sàng
 document.addEventListener('DOMContentLoaded', initChart);
 window.updateChart = updateChart; // Expose ra global để app.js gọi được
+
+// Update chart theme colors when toggling light/dark
+function updateChartTheme() {
+  if (!trafficChart) return;
+  const style = getComputedStyle(document.documentElement);
+  const gridColor = style.getPropertyValue('--chart-grid').trim() || 'rgba(255,255,255,0.04)';
+  const borderColor = style.getPropertyValue('--chart-border').trim() || 'rgba(255,255,255,0.06)';
+  const tickColor = style.getPropertyValue('--chart-tick').trim() || '#5a78a0';
+  const tooltipBg = style.getPropertyValue('--tooltip-bg').trim() || '#1e2a45';
+  const tooltipBorder = style.getPropertyValue('--tooltip-border').trim() || 'rgba(255,255,255,0.1)';
+  const textPrimary = style.getPropertyValue('--text-primary').trim() || '#e8edf5';
+  const textSecondary = style.getPropertyValue('--text-secondary').trim() || '#8fa3c0';
+
+  trafficChart.options.scales.x.ticks.color = tickColor;
+  trafficChart.options.scales.x.grid.color = gridColor;
+  trafficChart.options.scales.x.border.color = borderColor;
+  trafficChart.options.scales.y.ticks.color = tickColor;
+  trafficChart.options.scales.y.grid.color = gridColor;
+  trafficChart.options.scales.y.border.color = borderColor;
+  trafficChart.options.scales.y.title.color = tickColor;
+  trafficChart.options.plugins.legend.labels.color = textSecondary;
+  trafficChart.options.plugins.tooltip.backgroundColor = tooltipBg;
+  trafficChart.options.plugins.tooltip.borderColor = tooltipBorder;
+  trafficChart.options.plugins.tooltip.titleColor = textPrimary;
+  trafficChart.options.plugins.tooltip.bodyColor = textSecondary;
+  trafficChart.update();
+}
+window._updateChartTheme = updateChartTheme;

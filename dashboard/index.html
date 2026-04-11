@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Intelligent Load Balancing - Dashboard</title>
-  <meta name="description" content="Real-time dashboard for monitoring Intelligent Load Balancer distributing traffic across EC2 instances." />
+  <meta name="description" content="Real-time AWS-style dashboard for monitoring Intelligent Load Balancer, Target Groups, and ALB Traffic across EC2 instances." />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet" />
   <link rel="stylesheet" href="css/style.css" />
@@ -17,135 +17,398 @@
     <div class="header-left">
       <div class="header-logo">
         <svg width="28" height="28" viewBox="0 0 28 28" fill="none">
-          <rect x="3" y="12" width="22" height="4" rx="2" fill="#7dd3fc"/>
-          <rect x="1" y="4" width="8" height="6" rx="2" fill="#38bdf8"/>
-          <rect x="10" y="4" width="8" height="6" rx="2" fill="#38bdf8"/>
-          <rect x="19" y="4" width="8" height="6" rx="2" fill="#38bdf8"/>
-          <rect x="4" y="18" width="5" height="6" rx="1.5" fill="#0ea5e9"/>
-          <rect x="11.5" y="18" width="5" height="6" rx="1.5" fill="#0ea5e9"/>
-          <rect x="19" y="18" width="5" height="6" rx="1.5" fill="#0ea5e9"/>
+          <rect x="3" y="12" width="22" height="4" rx="2" fill="#7dd3fc" />
+          <rect x="1" y="4" width="8" height="6" rx="2" fill="#38bdf8" />
+          <rect x="10" y="4" width="8" height="6" rx="2" fill="#38bdf8" />
+          <rect x="19" y="4" width="8" height="6" rx="2" fill="#38bdf8" />
+          <rect x="4" y="18" width="5" height="6" rx="1.5" fill="#0ea5e9" />
+          <rect x="11.5" y="18" width="5" height="6" rx="1.5" fill="#0ea5e9" />
+          <rect x="19" y="18" width="5" height="6" rx="1.5" fill="#0ea5e9" />
         </svg>
         <span class="header-title">Intelligent Load Balancing</span>
       </div>
     </div>
     <nav class="header-nav">
-      <a href="#" class="nav-link active" id="nav-overview">Overview</a>
-      <a href="#" class="nav-link" id="nav-target-group">Target Group</a>
-      <a href="#" class="nav-link" id="nav-traffic">Traffic</a>
+      <a href="#" class="nav-link active" id="nav-overview" onclick="showPage('overview', this)">Overview</a>
+      <a href="#" class="nav-link" id="nav-target-group" onclick="showPage('target-group', this)">Target Group</a>
+      <a href="#" class="nav-link" id="nav-traffic" onclick="showPage('traffic', this)">Traffic</a>
+      <button class="theme-toggle" id="themeToggle" title="Chuyển sáng/tối">🌙</button>
     </nav>
   </header>
 
   <!-- ===== MAIN ===== -->
   <main class="main">
 
-    <!-- Alert Banner -->
-    <div class="alert-banner" id="alertBanner">
-      <div class="alert-icon">✓</div>
-      <div class="alert-text">
-        Load balancer is <strong>running</strong> and distributing traffic to EC2 servers.
-      </div>
-      <button class="alert-close" id="alertClose">✕</button>
-    </div>
+    <!-- ════════════════════════════════════════
+         PAGE: OVERVIEW
+    ═════════════════════════════════════════ -->
+    <div id="page-overview">
 
-    <section class="performance-strip" aria-label="Live load balancing metrics">
-      <div class="metric-card metric-primary">
-        <div class="metric-label">Request Rate</div>
-        <div class="metric-value" id="metricThroughput">0.00 req/s</div>
-        <div class="metric-subtext" id="metricThroughputHint">requests per second through ELB</div>
-      </div>
-      <div class="metric-card">
-        <div class="metric-label">Avg Latency</div>
-        <div class="metric-value" id="metricAvgLatency">0 ms</div>
-        <div class="metric-subtext" id="metricAvgLatencyHint">mean response time in current window</div>
-      </div>
-      <div class="metric-card">
-        <div class="metric-label">P99 Latency</div>
-        <div class="metric-value" id="metricP95Latency">0 ms</div>
-        <div class="metric-subtext" id="metricP95LatencyHint">tail latency (99th percentile)</div>
-      </div>
-      <div class="metric-card">
-        <div class="metric-label">Error Rate</div>
-        <div class="metric-value" id="metricPacketLoss">0.00%</div>
-        <div class="metric-subtext" id="metricPacketLossHint">proxy failures in current window</div>
-      </div>
-      <div class="metric-card">
-        <div class="metric-label">Success Rate</div>
-        <div class="metric-value" id="metricSuccessRate">100.00%</div>
-        <div class="metric-subtext" id="metricSuccessRateHint">successful routed requests</div>
-      </div>
-      <div class="metric-card metric-compact">
-        <div class="metric-label">Live Mode</div>
-        <div class="metric-badge-row">
-          <span class="metric-badge" id="metricAlgorithm">ROUND-ROBIN</span>
-          <span class="metric-badge metric-badge-soft" id="metricPoolHealth">3/3 healthy</span>
+      <!-- Status Banner -->
+      <div class="alert-banner" id="alertBanner">
+        <div class="alert-icon">✓</div>
+        <div class="alert-text" id="alertText">
+          Load balancer is <strong>running</strong> and distributing traffic to EC2 servers.
         </div>
-        <div class="metric-subtext" id="metricModeHint">current load balancer configuration</div>
+        <button class="alert-close" id="alertClose">✕</button>
       </div>
-    </section>
 
-    <!-- ===== TOP GRID: Server Status + Traffic Distribution ===== -->
-    <div class="grid-top">
+      <!-- Metric Strip: 4 key metrics + mode badge -->
+      <section class="performance-strip" aria-label="Live load balancing metrics">
+        <div class="metric-card metric-primary">
+          <div class="metric-label">Request Rate</div>
+          <div class="metric-value" id="metricThroughput">0.00 req/s</div>
+          <div class="metric-subtext" id="metricThroughputHint">through ELB</div>
+        </div>
+        <div class="metric-card">
+          <div class="metric-label">Avg Latency</div>
+          <div class="metric-value" id="metricAvgLatency">0.00 ms</div>
+          <div class="metric-subtext" id="metricAvgLatencyHint">mean response time</div>
+        </div>
+        <div class="metric-card">
+          <div class="metric-label">Error Rate</div>
+          <div class="metric-value" id="metricPacketLoss">0.00%</div>
+          <div class="metric-subtext" id="metricPacketLossHint">proxy failures</div>
+        </div>
+        <div class="metric-card">
+          <div class="metric-label">Success Rate</div>
+          <div class="metric-value" id="metricSuccessRate">100.00%</div>
+          <div class="metric-subtext" id="metricSuccessRateHint">routed successfully</div>
+        </div>
+        <!-- Hidden elements kept for JS compatibility -->
+        <span id="metricP95Latency" style="display:none"></span>
+        <span id="metricP95LatencyHint" style="display:none"></span>
+        <div class="metric-card metric-compact">
+          <div class="metric-label">Load Balancer</div>
+          <div class="metric-badge-row">
+            <span class="metric-badge" id="metricAlgorithm">ROUND ROBIN</span>
+            <span class="metric-badge metric-badge-soft" id="metricPoolHealth">3/3 healthy</span>
+          </div>
+          <div class="metric-subtext" id="metricModeHint">current configuration</div>
+        </div>
+      </section>
 
-      <!-- Server Status Card -->
-      <div class="card" id="serverStatusCard">
-        <h2 class="card-title">EC2 Instances (Simulated)</h2>
-        <table class="server-table" id="serverTable">
+      <!-- Server Status + Traffic Chart -->
+      <div class="grid-top">
+
+        <!-- EC2 Instance Status -->
+        <div class="card" id="serverStatusCard">
+          <h2 class="card-title">EC2 Instances</h2>
+          <table class="server-table" id="serverTable">
+            <thead>
+              <tr>
+                <th>Instance</th>
+                <th>Status</th>
+                <th>Requests</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody id="serverTableBody">
+              <!-- Populated by app.js -->
+            </tbody>
+          </table>
+        </div>
+
+        <!-- Traffic Distribution Chart -->
+        <div class="card" id="trafficCard">
+          <div class="card-header-row">
+            <h2 class="card-title">Traffic Distribution</h2>
+            <button class="btn-primary" id="btnGenerateTraffic">⚡ Generate Traffic</button>
+          </div>
+          <div class="chart-wrapper">
+            <canvas id="trafficChart"></canvas>
+          </div>
+        </div>
+
+      </div>
+
+      <!-- Recent Requests Log -->
+      <div class="card" id="recentRequestsCard">
+        <div class="card-header-row">
+          <h2 class="card-title">Recent Requests Through ELB</h2>
+          <button class="btn-outline" id="refreshBtn">↻ Refresh</button>
+        </div>
+
+        <table class="requests-table" id="requestsTable">
           <thead>
             <tr>
-              <th>Instance</th>
-              <th>Status</th>
-              <th>Requests Handled</th>
-              <th></th>
+              <th>Time</th>
+              <th>Client IP</th>
+              <th>Handled By</th>
+              <th>Distribution</th>
             </tr>
           </thead>
-          <tbody id="serverTableBody">
-            <!-- Populated by JS -->
+          <tbody id="requestsTableBody">
+            <!-- Populated by app.js -->
           </tbody>
         </table>
-        <div class="card-footer">
-          <button class="btn-outline" id="btnAllDetails">Details</button>
+
+        <div class="table-footer">
+          <span id="lastUpdated">Last updated: connecting...</span>
+          <!-- Hidden for JS compat -->
+          <button id="refreshBtn2" style="display:none"></button>
         </div>
       </div>
 
-      <!-- Traffic Distribution Card -->
-      <div class="card" id="trafficCard">
+      <!-- Hidden for JS compat -->
+      <button id="btnAllDetails" style="display:none"></button>
+
+    </div>
+    <!-- /page-overview -->
+
+
+    <!-- ════════════════════════════════════════
+         PAGE: TARGET GROUP
+    ═════════════════════════════════════════ -->
+    <div id="page-target-group" class="hidden">
+
+      <!-- TG Header -->
+      <div class="tg-page-header">
+        <div>
+          <h1 class="tg-page-title">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" style="vertical-align:middle;margin-right:8px">
+              <circle cx="12" cy="12" r="9" stroke="#3b82f6" stroke-width="2" />
+              <circle cx="12" cy="12" r="5" stroke="#3b82f6" stroke-width="2" />
+              <circle cx="12" cy="12" r="1.5" fill="#3b82f6" />
+            </svg>
+            Target Group
+          </h1>
+          <div class="tg-page-subtitle">AWS Application Load Balancer — EC2 Target Registration</div>
+        </div>
+        <span class="tg-arn">arn:aws:elasticloadbalancing:ap-southeast-1:tg/lb-tg</span>
+      </div>
+
+      <!-- TG Summary: 4 most useful stats -->
+      <div class="tg-summary-row">
+        <div class="tg-summary-card">
+          <div class="tg-summary-icon tg-icon-healthy">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+              <path d="M9 12l2 2 4-4m5 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+            </svg>
+          </div>
+          <div class="tg-summary-content">
+            <div class="tg-summary-value" id="tg-healthy-count">—</div>
+            <div class="tg-summary-label">Healthy Targets</div>
+          </div>
+        </div>
+        <div class="tg-summary-card">
+          <div class="tg-summary-icon tg-icon-unhealthy">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+              <path d="M10 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2m7-2a9 9 0 11-18 0 9 9 0 0118 0z" />
+            </svg>
+          </div>
+          <div class="tg-summary-content">
+            <div class="tg-summary-value" id="tg-unhealthy-count">—</div>
+            <div class="tg-summary-label">Unhealthy</div>
+          </div>
+        </div>
+        <div class="tg-summary-card">
+          <div class="tg-summary-icon tg-icon-req">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+              <path d="M8 12h8m-4-4v8m9-4a9 9 0 11-18 0 9 9 0 0118 0z" />
+            </svg>
+          </div>
+          <div class="tg-summary-content">
+            <div class="tg-summary-value" id="tg-total-req">0</div>
+            <div class="tg-summary-label">Total Requests</div>
+          </div>
+        </div>
+        <div class="tg-summary-card tg-summary-card-highlight">
+          <div class="tg-summary-icon tg-icon-pct">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+              <path d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
+            </svg>
+          </div>
+          <div class="tg-summary-content">
+            <div class="tg-summary-value" id="tg-healthy-pct">—</div>
+            <div class="tg-summary-label">Availability</div>
+          </div>
+        </div>
+        <!-- Hidden for JS compat -->
+        <span id="tg-total-rps" style="display:none">0</span>
+        <span id="tg-total-conn" style="display:none">0</span>
+      </div>
+
+      <!-- Registered Targets Table -->
+      <div class="card">
         <div class="card-header-row">
-          <h2 class="card-title">Traffic Distribution Test</h2>
-          <button class="btn-primary" id="btnGenerateTraffic">Generate Traffic</button>
+          <h2 class="card-title">Registered Targets</h2>
+          <div style="display:flex;gap:8px;align-items:center">
+            <span class="tg-protocol-badge">HTTP · Port 80</span>
+            <span class="tg-protocol-badge tg-proto-algo">Round Robin</span>
+          </div>
         </div>
-        <div class="chart-wrapper">
-          <canvas id="trafficChart"></canvas>
+
+        <table class="tg-table">
+          <thead>
+            <tr>
+              <th class="tg-th">Instance</th>
+              <th class="tg-th">Health</th>
+              <th class="tg-th">Requests</th>
+              <th class="tg-th">Health History</th>
+              <th class="tg-th">Actions</th>
+            </tr>
+          </thead>
+          <tbody id="tg-table-body">
+            <!-- populated by target-group.js -->
+          </tbody>
+        </table>
+      </div>
+
+      <!-- Health Check Configuration -->
+      <div class="card tg-config-card">
+        <h2 class="card-title">Health Check Configuration</h2>
+        <div class="tg-config-grid">
+          <div class="tg-config-item">
+            <span class="tg-config-label">Protocol</span>
+            <span class="tg-config-value">HTTP</span>
+          </div>
+          <div class="tg-config-item">
+            <span class="tg-config-label">Path</span>
+            <span class="tg-config-value">/health</span>
+          </div>
+          <div class="tg-config-item">
+            <span class="tg-config-label">Interval</span>
+            <span class="tg-config-value">5 seconds</span>
+          </div>
+          <div class="tg-config-item">
+            <span class="tg-config-label">Timeout</span>
+            <span class="tg-config-value">3 seconds</span>
+          </div>
+          <div class="tg-config-item">
+            <span class="tg-config-label">Healthy Threshold</span>
+            <span class="tg-config-value">2 checks</span>
+          </div>
+          <div class="tg-config-item">
+            <span class="tg-config-label">Unhealthy Threshold</span>
+            <span class="tg-config-value">3 checks</span>
+          </div>
+          <div class="tg-config-item">
+            <span class="tg-config-label">Success Codes</span>
+            <span class="tg-config-value">200</span>
+          </div>
+          <div class="tg-config-item">
+            <span class="tg-config-label">Deregistration Delay</span>
+            <span class="tg-config-value">300 seconds</span>
+          </div>
         </div>
       </div>
 
     </div>
+    <!-- /page-target-group -->
 
-    <!-- ===== RECENT REQUESTS ===== -->
-    <div class="card" id="recentRequestsCard">
-      <div class="card-header-row">
-        <h2 class="card-title">Recent Requests Through ELB</h2>
-        <button class="btn-primary" id="refreshBtn">↻ Refresh</button>
+
+    <!-- ════════════════════════════════════════
+         PAGE: TRAFFIC
+    ═════════════════════════════════════════ -->
+    <div id="page-traffic" class="hidden">
+
+      <!-- Traffic Header -->
+      <div class="tg-page-header">
+        <div>
+          <h1 class="tg-page-title">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" style="vertical-align:middle;margin-right:8px">
+              <path d="M13 10V3L4 14h7v7l9-11h-7z" stroke="#f59e0b" stroke-width="2" stroke-linejoin="round" fill="#f59e0b44" />
+            </svg>
+            ALB Traffic Monitor
+          </h1>
+          <div class="tg-page-subtitle">Real-time traffic — AWS Application Load Balancer → EC2 Instances</div>
+        </div>
+        <button class="btn-primary" id="tfc-generate-btn">⚡ Generate Traffic</button>
       </div>
 
-      <table class="requests-table" id="requestsTable">
-        <thead>
-          <tr>
-            <th>Time</th>
-            <th>Client IP</th>
-            <th>Handled By</th>
-            <th>Requests</th>
-          </tr>
-        </thead>
-        <tbody id="requestsTableBody">
-          <!-- Populated by JS -->
-        </tbody>
-      </table>
-
-      <div class="table-footer">
-        <span id="lastUpdated">Last updated: connecting...</span>
-        <button class="btn-primary" id="refreshBtn2">↻ Refresh</button>
+      <!-- Traffic Stat Cards: 4 key metrics -->
+      <div class="tfc-stats-row">
+        <div class="tfc-stat-card">
+          <div class="tfc-stat-label">Throughput</div>
+          <div class="tfc-stat-value" id="tfc-total-rps">0.00</div>
+          <div class="tfc-stat-unit">req / second</div>
+        </div>
+        <div class="tfc-stat-card">
+          <div class="tfc-stat-label">Total Requests</div>
+          <div class="tfc-stat-value" id="tfc-total-req">0</div>
+          <div class="tfc-stat-unit">since startup</div>
+        </div>
+        <div class="tfc-stat-card">
+          <div class="tfc-stat-label">Healthy Targets</div>
+          <div class="tfc-stat-value" id="tfc-healthy">—</div>
+          <div class="tfc-stat-unit">instances up</div>
+        </div>
+        <div class="tfc-stat-card tfc-stat-card-warn">
+          <div class="tfc-stat-label">Error Rate</div>
+          <div class="tfc-stat-value" id="tfc-error-rate">0.00%</div>
+          <div class="tfc-stat-unit">failure ratio</div>
+        </div>
+        <!-- Hidden for JS compat -->
+        <span id="tfc-avg-latency" style="display:none">0 ms</span>
+        <span id="tfc-active-conn" style="display:none">0</span>
       </div>
+
+      <!-- Traffic Chart + Distribution Bars -->
+      <div class="tfc-grid-top">
+
+        <div class="card">
+          <div class="card-header-row">
+            <h2 class="card-title">Request Rate per EC2 (realtime)</h2>
+            <span class="tfc-live-badge">● LIVE</span>
+          </div>
+          <div class="tfc-chart-wrapper">
+            <canvas id="tfc-chart"></canvas>
+          </div>
+        </div>
+
+        <div class="card">
+          <h2 class="card-title">Traffic Distribution</h2>
+          <div id="tfc-server-bars" class="tfc-server-bars-container">
+            <!-- populated by traffic.js -->
+          </div>
+          <div class="tfc-distribution-note">
+            Traffic distributed by ALB via Round Robin
+          </div>
+        </div>
+
+      </div>
+
+      <!-- Access Log -->
+      <div class="card">
+        <div class="card-header-row">
+          <h2 class="card-title">ALB Access Log — Live</h2>
+          <div style="display:flex;align-items:center;gap:8px">
+            <div class="tfc-filter-group">
+              <button class="tfc-filter-btn tfc-filter-active" data-tfc-filter="all">All</button>
+              <button class="tfc-filter-btn" data-tfc-filter="ec2-1">EC2-1</button>
+              <button class="tfc-filter-btn" data-tfc-filter="ec2-2">EC2-2</button>
+              <button class="tfc-filter-btn" data-tfc-filter="ec2-3">EC2-3</button>
+            </div>
+            <button class="btn-outline" id="tfc-clear-btn">Clear</button>
+          </div>
+        </div>
+
+        <table class="tfc-log-table">
+          <thead>
+            <tr>
+              <th class="tfc-log-th">Time</th>
+              <th class="tfc-log-th">Client IP</th>
+              <th class="tfc-log-th">Target Instance</th>
+              <th class="tfc-log-th">Latency</th>
+              <th class="tfc-log-th">Status</th>
+            </tr>
+          </thead>
+          <tbody id="tfc-log-body">
+            <tr>
+              <td colspan="5" class="tfc-empty">No traffic yet — click "Generate Traffic" to start</td>
+            </tr>
+          </tbody>
+        </table>
+
+        <div class="table-footer">
+          <span id="tfc-log-count" style="font-size:12px;color:var(--text-muted)">Log records: 0</span>
+          <span style="font-size:12px;color:var(--text-muted)">Showing latest 50 requests</span>
+        </div>
+      </div>
+
     </div>
+    <!-- /page-traffic -->
 
   </main>
 
@@ -160,8 +423,68 @@
     </div>
   </div>
 
+  <!-- Modal: Target Group Details -->
+  <div class="modal-overlay hidden" id="tg-modal-overlay">
+    <div class="modal tg-modal" id="tg-detail-modal">
+      <div class="modal-header">
+        <h3 id="tg-modal-title">Target Details</h3>
+        <button class="modal-close" id="tg-modal-close">✕</button>
+      </div>
+      <div class="modal-body" id="tg-modal-body"></div>
+    </div>
+  </div>
+
+  <!-- Theme Toggle -->
+  <script>
+    (function() {
+      const saved = localStorage.getItem('lb-theme') || 'dark';
+      if (saved === 'light') document.documentElement.setAttribute('data-theme', 'light');
+
+      document.addEventListener('DOMContentLoaded', function() {
+        const btn = document.getElementById('themeToggle');
+        function updateIcon() {
+          const isLight = document.documentElement.getAttribute('data-theme') === 'light';
+          btn.textContent = isLight ? '☀️' : '🌙';
+          btn.title = isLight ? 'Chuyển sang tối' : 'Chuyển sang sáng';
+        }
+        updateIcon();
+
+        btn.addEventListener('click', function() {
+          const isLight = document.documentElement.getAttribute('data-theme') === 'light';
+          if (isLight) {
+            document.documentElement.removeAttribute('data-theme');
+            localStorage.setItem('lb-theme', 'dark');
+          } else {
+            document.documentElement.setAttribute('data-theme', 'light');
+            localStorage.setItem('lb-theme', 'light');
+          }
+          updateIcon();
+          // Update chart colors for the new theme
+          if (window._updateChartTheme) window._updateChartTheme();
+        });
+      });
+    })();
+  </script>
+
+  <!-- Page Navigation -->
+  <script>
+    function showPage(name, linkEl) {
+      ['overview', 'target-group', 'traffic'].forEach(p => {
+        const el = document.getElementById('page-' + p);
+        if (el) el.classList.toggle('hidden', p !== name);
+      });
+      document.querySelectorAll('.nav-link').forEach(a => a.classList.remove('active'));
+      if (linkEl) linkEl.classList.add('active');
+      if (name === 'traffic' && window._initTrafficChart) {
+        setTimeout(window._initTrafficChart, 50);
+      }
+    }
+  </script>
+
   <script src="js/ws.js"></script>
   <script src="js/chart-init.js"></script>
   <script src="js/app.js"></script>
+  <script src="js/target-group.js"></script>
+  <script src="js/traffic.js"></script>
 </body>
 </html>
