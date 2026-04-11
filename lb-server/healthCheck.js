@@ -13,12 +13,12 @@ const INTERVAL = config.loadBalancer.healthCheckInterval || 5000;
 // 🧠 lưu trạng thái từng server
 const serverState = {};
 
-// init state
+// init state — bắt đầu ở 'up' để route request ngay lập tức
 config.servers.forEach(s => {
   serverState[s.id] = {
     failCount: 0,
-    successCount: 0,
-    status: 'unknown'
+    successCount: 2,    // ← pretend 2 success already so status flips to 'up'
+    status: 'up'        // ← start UP, sẽ bị DOWN nếu fail 3 lần liên tiếp
   };
 });
 
@@ -29,10 +29,13 @@ function handleFail(server, resolve) {
   state.successCount = 0;
   state.failCount++;
 
-  if (state.failCount >= 2 && state.status !== 'down') {
+  // Cần 3 lần fail liên tiếp mới đánh dấu DOWN (tránh false positive)
+  if (state.failCount >= 3 && state.status !== 'down') {
     state.status = 'down';
     updateServerStatus(server.id, 'down');
-    console.log(`❌ ${server.name} → DOWN`);
+    console.log(`❌ ${server.name} → DOWN (${state.failCount} lần thất bại liên tiếp)`);
+  } else if (state.failCount < 3) {
+    console.log(`⚠️  ${server.name} fail ${state.failCount}/3 — vẫn giữ UP`);
   }
 
   resolve('down');
@@ -56,7 +59,8 @@ function checkServer(server) {
         state.failCount = 0;
         state.successCount++;
 
-        if (state.successCount >= 2 && state.status !== 'up') {
+        // Chỉ cần 1 lần success là UP (thay vì 2)
+        if (state.successCount >= 1 && state.status !== 'up') {
           state.status = 'up';
           updateServerStatus(server.id, 'up');
           console.log(`✅ ${server.name} → UP`);

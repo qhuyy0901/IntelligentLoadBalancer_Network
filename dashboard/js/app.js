@@ -15,16 +15,16 @@ const COLORS = {
 };
 
 // ── Lưu tham chiếu các phần tử DOM ────────────────────────────────────────
-const serverTableBody    = document.getElementById('serverTableBody');
-const requestsTableBody  = document.getElementById('requestsTableBody');
-const lastUpdatedEl      = document.getElementById('lastUpdated');
-const alertIconEl        = document.querySelector('.alert-icon');
-const alertTextEl        = document.querySelector('.alert-text');
+const serverTableBody = document.getElementById('serverTableBody');
+const requestsTableBody = document.getElementById('requestsTableBody');
+const lastUpdatedEl = document.getElementById('lastUpdated');
+const alertIconEl = document.querySelector('.alert-icon');
+const alertTextEl = document.querySelector('.alert-text');
 const metricThroughputEl = document.getElementById('metricThroughput');
 const metricThroughputHintEl = document.getElementById('metricThroughputHint');
 const metricAvgLatencyEl = document.getElementById('metricAvgLatency');
 const metricAvgLatencyHintEl = document.getElementById('metricAvgLatencyHint');
-const metricP95LatencyEl     = document.getElementById('metricP95Latency');
+const metricP95LatencyEl = document.getElementById('metricP95Latency');
 const metricP95LatencyHintEl = document.getElementById('metricP95LatencyHint');
 const metricPacketLossEl = document.getElementById('metricPacketLoss');
 const metricPacketLossHintEl = document.getElementById('metricPacketLossHint');
@@ -128,7 +128,7 @@ function openModal(serverId) {
     <div class="modal-stat"><span class="modal-stat-label">Tên server</span><span class="modal-stat-value">${s.name}</span></div>
     <div class="modal-stat"><span class="modal-stat-label">Domain</span><span class="modal-stat-value">${s.domain}</span></div>
     <div class="modal-stat"><span class="modal-stat-label">Cổng (Port)</span><span class="modal-stat-value">${s.port}</span></div>
-    <div class="modal-stat"><span class="modal-stat-label">Trạng thái</span><span class="modal-stat-value" style="color:${s.status==='up'?'#86efac':'#fca5a5'}">${s.status === 'up' ? 'HOẠT ĐỘNG' : 'NGỪNG'}</span></div>
+    <div class="modal-stat"><span class="modal-stat-label">Trạng thái</span><span class="modal-stat-value" style="color:${s.status === 'up' ? '#86efac' : '#fca5a5'}">${s.status === 'up' ? 'HOẠT ĐỘNG' : 'NGỪNG'}</span></div>
     <div class="modal-stat"><span class="modal-stat-label">Tổng request đã xử lý</span><span class="modal-stat-value">${s.requestCount}</span></div>
     <div class="modal-stat"><span class="modal-stat-label">Kết nối đang xử lý</span><span class="modal-stat-value">${s.activeConnections}</span></div>
     <div class="modal-stat"><span class="modal-stat-label">Request / 2 giây</span><span class="modal-stat-value">${s.rps}</span></div>
@@ -215,7 +215,7 @@ function renderPerformanceMetrics(metrics = {}, algorithm = 'round-robin', serve
   metricPacketLossEl.textContent = formatMetricPct(metrics.packetLossPct);
   metricPacketLossHintEl.textContent = `${formatMetricCount(metrics.failureCount || 0)} failed attempts in window`;
   metricSuccessRateEl.textContent = formatMetricPct(metrics.successRatePct);
-  metricSuccessRateHintEl.textContent = `${formatMetricCount(metrics.totalAttempts || 0)} total attempts`; 
+  metricSuccessRateHintEl.textContent = `${formatMetricCount(metrics.totalAttempts || 0)} total attempts`;
   metricAlgorithmEl.textContent = formatAlgorithmName(algorithm);
   metricPoolHealthEl.textContent = `${healthyServers.length}/${enabledServers.length} healthy`;
   metricModeHintEl.textContent = `${enabledServers.length} target members, ${algorithm || 'round-robin'} mode`;
@@ -263,13 +263,33 @@ function distChip(serverId, serverName) {
 // Lưu lịch sử IP — theo dõi server nào đã xử lý request từ IP đó
 const ipHistory = {};
 
+// ✅ FIX ANTI-DUPLICATE: Lưu các request đã render để tránh hiển thị trùng
+// Key = "clientIp-timestamp-serverId", tự động xóa sau 30 giây để không rò bộ nhớ
+const processedRequests = new Set();
+function addProcessedKey(key) {
+  processedRequests.add(key);
+  setTimeout(() => processedRequests.delete(key), 30000);
+}
+
 function renderRequestsTable(requests) {
   if (!requests || requests.length === 0) {
     requestsTableBody.innerHTML = `<tr><td colspan="4" style="color:var(--text-muted);text-align:center;padding:24px">Chưa có request — hãy gửi traffic đến ${LB_API_BASE}</td></tr>`;
     return;
   }
 
-  requestsTableBody.innerHTML = requests.slice(0, 10).map(r => {
+  // Lọc trùng: mỗi request chỉ được render 1 lần dựa theo key ip+time+server
+  const uniqueRequests = [];
+  requests.forEach(r => {
+    const key = `${r.clientIp}-${r.time}-${r.serverId}`;
+    if (!processedRequests.has(key)) {
+      addProcessedKey(key);
+      uniqueRequests.push(r);
+    }
+  });
+
+  if (uniqueRequests.length === 0) return; // Không có gì mới → không re-render
+
+  requestsTableBody.innerHTML = uniqueRequests.slice(0, 10).map(r => {
     const ip = r.clientIp;
     // Cập nhật lịch sử server đã xử lý request từ IP này
     if (!ipHistory[ip]) ipHistory[ip] = [];
@@ -292,7 +312,16 @@ function renderRequestsTable(requests) {
 }
 
 // ── Xử Lý Sự Kiện WebSocket Stats ─────────────────────────────────────────
+// ✅ FIX THROTTLE: Chặn WebSocket spam — nếu event đến trong vòng 200ms thì bỏ qua
+let lastUpdateTime = 0;
+
 window.addEventListener('lb-stats', (e) => {
+  const now = Date.now();
+
+  // Nếu event đến quá nhanh (< 200ms) → bỏ qua, tránh render 2 lần cùng lúc
+  if (now - lastUpdateTime < 200) return;
+  lastUpdateTime = now;
+
   const { servers, recentRequests, metrics, algorithm } = e.detail;
 
   renderServerTable(servers);          // Cập nhật bảng trạng thái server
