@@ -112,9 +112,4 @@ npm run test-traffic
 - `POST /lb/config/server?id=ec2-2&enabled=false`: loai server khoi target group simulate
 - `POST /lb/config/server?id=ec2-2&enabled=true`: them lai vao target group
 
-## Cau tra loi ngan gon khi bao ve
 
-- EC2 servers duoc mo phong bang cac Node.js services rieng.
-- Target Group duoc quan ly trong `config/servers.json`.
-- ELB duoc mo phong bang Node.js proxy + health check + routing.
-- He thong phan phoi tai theo Round Robin va co failover khi node loi.
