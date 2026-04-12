@@ -1,0 +1,337 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Intelligent Load Balancer — Dashboard</title>
+  <link rel="stylesheet" href="style.css" />
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css" />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+</head>
+<body>
+  <!-- ===== SIDEBAR ===== -->
+  <aside class="sidebar" id="sidebar">
+    <div class="sidebar-brand">
+      <i class="fas fa-network-wired"></i>
+      <span>ILB Dashboard</span>
+    </div>
+    <nav class="sidebar-nav">
+      <a href="#dashboard" class="nav-link active" data-section="dashboard">
+        <i class="fas fa-tachometer-alt"></i><span>Dashboard</span>
+      </a>
+      <a href="#servers" class="nav-link" data-section="servers">
+        <i class="fas fa-server"></i><span>Servers</span>
+      </a>
+      <a href="#traffic" class="nav-link" data-section="traffic">
+        <i class="fas fa-chart-line"></i><span>Traffic</span>
+      </a>
+      <a href="#history" class="nav-link" data-section="history">
+        <i class="fas fa-history"></i><span>Request Log</span>
+      </a>
+      <a href="#about" class="nav-link" data-section="about">
+        <i class="fas fa-info-circle"></i><span>About</span>
+      </a>
+    </nav>
+    <div class="sidebar-footer">
+      <span class="version-badge">v1.0.0</span>
+    </div>
+  </aside>
+
+  <!-- ===== MAIN CONTENT ===== -->
+  <div class="main-wrapper">
+    <!-- Top bar -->
+    <header class="topbar">
+      <button class="sidebar-toggle" id="sidebarToggle" title="Toggle sidebar">
+        <i class="fas fa-bars"></i>
+      </button>
+      <div class="topbar-title">
+        <h1>Intelligent Load Balancer</h1>
+        <p class="topbar-subtitle">Real-time Server Monitoring &amp; Traffic Management</p>
+      </div>
+      <div class="topbar-actions">
+        <button class="btn btn-outline" id="btnRefresh" title="Refresh data">
+          <i class="fas fa-sync-alt"></i> Refresh
+        </button>
+        <button class="btn btn-primary" id="btnGenerateTraffic" title="Generate simulated traffic">
+          <i class="fas fa-paper-plane"></i> Generate Traffic
+        </button>
+        <div class="theme-toggle" id="themeToggle" title="Toggle theme">
+          <i class="fas fa-moon"></i>
+        </div>
+      </div>
+    </header>
+
+    <main class="content">
+      <!-- ===== SECTION: DASHBOARD ===== -->
+      <section id="dashboard" class="section">
+        <div class="section-header">
+          <h2><i class="fas fa-tachometer-alt"></i> Dashboard Overview</h2>
+          <span class="live-badge"><span class="pulse"></span> Live</span>
+        </div>
+        <div class="stats-grid">
+          <div class="stat-card stat-total">
+            <div class="stat-icon"><i class="fas fa-server"></i></div>
+            <div class="stat-info">
+              <span class="stat-value" id="statTotalServers">0</span>
+              <span class="stat-label">Total Servers</span>
+            </div>
+          </div>
+          <div class="stat-card stat-healthy">
+            <div class="stat-icon"><i class="fas fa-check-circle"></i></div>
+            <div class="stat-info">
+              <span class="stat-value" id="statHealthy">0</span>
+              <span class="stat-label">Healthy</span>
+            </div>
+          </div>
+          <div class="stat-card stat-unhealthy">
+            <div class="stat-icon"><i class="fas fa-times-circle"></i></div>
+            <div class="stat-info">
+              <span class="stat-value" id="statUnhealthy">0</span>
+              <span class="stat-label">Unhealthy</span>
+            </div>
+          </div>
+          <div class="stat-card stat-requests">
+            <div class="stat-icon"><i class="fas fa-exchange-alt"></i></div>
+            <div class="stat-info">
+              <span class="stat-value" id="statTotalRequests">0</span>
+              <span class="stat-label">Total Requests</span>
+            </div>
+          </div>
+          <div class="stat-card stat-latency">
+            <div class="stat-icon"><i class="fas fa-clock"></i></div>
+            <div class="stat-info">
+              <span class="stat-value" id="statAvgResponse">0 ms</span>
+              <span class="stat-label">Avg Response</span>
+            </div>
+          </div>
+          <div class="stat-card stat-algorithm">
+            <div class="stat-icon"><i class="fas fa-random"></i></div>
+            <div class="stat-info">
+              <span class="stat-value" id="statAlgorithm">Round Robin</span>
+              <span class="stat-label">Algorithm</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Mini server health chart -->
+        <div class="chart-row">
+          <div class="card chart-card">
+            <div class="card-header">
+              <h3><i class="fas fa-heartbeat"></i> Server Health Overview</h3>
+            </div>
+            <div class="card-body">
+              <div class="health-bars" id="healthBars"></div>
+            </div>
+          </div>
+          <div class="card chart-card">
+            <div class="card-header">
+              <h3><i class="fas fa-chart-bar"></i> Request Distribution</h3>
+            </div>
+            <div class="card-body">
+              <div class="bar-chart" id="requestChart"></div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ===== SECTION: SERVERS ===== -->
+      <section id="servers" class="section">
+        <div class="section-header">
+          <h2><i class="fas fa-server"></i> Server Management</h2>
+        </div>
+
+        <!-- Filter / Search -->
+        <div class="toolbar">
+          <div class="search-box">
+            <i class="fas fa-search"></i>
+            <input type="text" id="searchInput" placeholder="Search by name or IP..." />
+          </div>
+          <div class="filter-group">
+            <button class="filter-btn active" data-filter="all">All</button>
+            <button class="filter-btn" data-filter="healthy">Healthy</button>
+            <button class="filter-btn" data-filter="unhealthy">Unhealthy</button>
+          </div>
+        </div>
+
+        <!-- Server table -->
+        <div class="card table-card">
+          <div class="table-responsive">
+            <table class="data-table" id="serverTable">
+              <thead>
+                <tr>
+                  <th>#</th>
+                  <th>Server Name</th>
+                  <th>IP Address</th>
+                  <th>Status</th>
+                  <th>CPU</th>
+                  <th>Memory</th>
+                  <th>Requests</th>
+                  <th>Resp. Time</th>
+                  <th>Zone</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody id="serverTableBody"></tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- Add server form -->
+        <div class="card form-card">
+          <div class="card-header">
+            <h3><i class="fas fa-plus-circle"></i> Add New Server</h3>
+          </div>
+          <div class="card-body">
+            <form id="addServerForm" class="server-form">
+              <div class="form-grid">
+                <div class="form-group">
+                  <label for="fName">Server Name</label>
+                  <input type="text" id="fName" placeholder="e.g. backend-04" required />
+                </div>
+                <div class="form-group">
+                  <label for="fIP">IP Address</label>
+                  <input type="text" id="fIP" placeholder="e.g. 10.0.4.10" required />
+                </div>
+                <div class="form-group">
+                  <label for="fZone">Zone</label>
+                  <select id="fZone">
+                    <option value="ap-southeast-1a">ap-southeast-1a</option>
+                    <option value="ap-southeast-1b">ap-southeast-1b</option>
+                    <option value="us-east-1a">us-east-1a</option>
+                    <option value="us-west-2a">us-west-2a</option>
+                  </select>
+                </div>
+                <div class="form-group">
+                  <label for="fStatus">Initial Status</label>
+                  <select id="fStatus">
+                    <option value="healthy">Healthy</option>
+                    <option value="unhealthy">Unhealthy</option>
+                  </select>
+                </div>
+                <div class="form-group">
+                  <label for="fCPU">CPU (%)</label>
+                  <input type="number" id="fCPU" min="0" max="100" value="25" />
+                </div>
+                <div class="form-group">
+                  <label for="fMemory">Memory (%)</label>
+                  <input type="number" id="fMemory" min="0" max="100" value="40" />
+                </div>
+                <div class="form-group">
+                  <label for="fResponse">Response Time (ms)</label>
+                  <input type="number" id="fResponse" min="1" max="5000" value="120" />
+                </div>
+              </div>
+              <button type="submit" class="btn btn-success btn-add">
+                <i class="fas fa-plus"></i> Add Server
+              </button>
+            </form>
+          </div>
+        </div>
+      </section>
+
+      <!-- ===== SECTION: TRAFFIC MONITOR ===== -->
+      <section id="traffic" class="section">
+        <div class="section-header">
+          <h2><i class="fas fa-chart-line"></i> Traffic Monitor</h2>
+          <button class="btn btn-primary btn-sm" id="btnTrafficBurst">
+            <i class="fas fa-bolt"></i> Burst 50 Requests
+          </button>
+        </div>
+
+        <div class="traffic-grid">
+          <div class="card">
+            <div class="card-header"><h3><i class="fas fa-wave-square"></i> Live Traffic Feed</h3></div>
+            <div class="card-body">
+              <div class="traffic-feed" id="trafficFeed">
+                <p class="empty-state">No traffic yet. Click <strong>Generate Traffic</strong> to start.</p>
+              </div>
+            </div>
+          </div>
+          <div class="card">
+            <div class="card-header"><h3><i class="fas fa-server"></i> Server Load</h3></div>
+            <div class="card-body">
+              <div id="serverLoadBars"></div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ===== SECTION: REQUEST HISTORY ===== -->
+      <section id="history" class="section">
+        <div class="section-header">
+          <h2><i class="fas fa-history"></i> Recent Request History</h2>
+          <button class="btn btn-outline btn-sm" id="btnClearHistory">
+            <i class="fas fa-trash-alt"></i> Clear
+          </button>
+        </div>
+        <div class="card table-card">
+          <div class="table-responsive">
+            <table class="data-table" id="historyTable">
+              <thead>
+                <tr>
+                  <th>Timestamp</th>
+                  <th>Request ID</th>
+                  <th>Server</th>
+                  <th>Route</th>
+                  <th>Status</th>
+                  <th>Latency</th>
+                </tr>
+              </thead>
+              <tbody id="historyTableBody"></tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+      <!-- ===== SECTION: ABOUT ===== -->
+      <section id="about" class="section">
+        <div class="section-header">
+          <h2><i class="fas fa-info-circle"></i> Project Information</h2>
+        </div>
+        <div class="about-grid">
+          <div class="card about-card">
+            <div class="card-body">
+              <h3><i class="fas fa-project-diagram"></i> About This Project</h3>
+              <p>
+                This is a <strong>showcase web dashboard</strong> built for the
+                <em>Intelligent Load Balancer</em> university project. It demonstrates 
+                real-time server monitoring, traffic distribution, and health-check 
+                visualization for an AWS-based load balancing system.
+              </p>
+              <div class="info-badges">
+                <span class="info-badge"><i class="fas fa-code"></i> HTML / CSS / JS</span>
+                <span class="info-badge"><i class="fab fa-aws"></i> AWS EC2</span>
+                <span class="info-badge"><i class="fas fa-balance-scale"></i> Load Balancer</span>
+                <span class="info-badge"><i class="fas fa-heartbeat"></i> Health Check</span>
+              </div>
+            </div>
+          </div>
+          <div class="card about-card">
+            <div class="card-body">
+              <h3><i class="fas fa-exclamation-triangle"></i> Disclaimer</h3>
+              <p>
+                All data displayed on this dashboard is <strong>simulated in-memory</strong> 
+                using JavaScript arrays. There is <strong>no backend server or database</strong> 
+                involved. Data resets on every page reload. This demo is designed to showcase 
+                UI/UX concepts and system architecture understanding.
+              </p>
+              <div class="info-badges">
+                <span class="info-badge warn"><i class="fas fa-database"></i> No Database</span>
+                <span class="info-badge warn"><i class="fas fa-server"></i> No Backend</span>
+                <span class="info-badge warn"><i class="fas fa-redo"></i> Resets on Reload</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <!-- Footer -->
+    <footer class="main-footer">
+      <p>&copy; 2026 Intelligent Load Balancer &mdash; University Networking Project</p>
+    </footer>
+  </div>
+
+  <script src="script.js"></script>
+</body>
+</html>
