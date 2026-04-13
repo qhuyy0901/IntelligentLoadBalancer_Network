@@ -245,7 +245,7 @@ body {
   justify-content: space-between;
   gap: 12px;
 }
-}
+
 
 .metric-primary {
   background:
@@ -681,9 +681,7 @@ body {
 .modal-stat-label { color: var(--text-secondary); font-size: 13px; }
 .modal-stat-value { color: var(--text-primary); font-weight: 600; font-size: 13px; }
 
-/* ═══════════════════════════════════════════════
-   TARGET GROUP PAGE (.tg-*)
-═══════════════════════════════════════════════ */
+
 
 /* ─── TG Page Header ─────────────────────────── */
 .tg-page-header {
@@ -1077,9 +1075,7 @@ body {
 }
 
 
-/* ═══════════════════════════════════════════════
-   TRAFFIC PAGE (.tfc-*)
-═══════════════════════════════════════════════ */
+
 
 /* ─── TFC Stats Row ──────────────────────────── */
 .tfc-stats-row {

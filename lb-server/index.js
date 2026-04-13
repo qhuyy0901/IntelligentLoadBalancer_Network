@@ -1,46 +1,10 @@
-/**
- * ============================================================================
- *  LOAD BALANCER — Máy chủ cân bằng tải chính (Entry Point)
- * ============================================================================
- *
- *  LUỒNG HOẠT ĐỘNG TỔNG QUAN:
- *  ┌──────────┐     HTTP      ┌────────────┐   proxy    ┌──────────┐
- *  │  Client  │ ──────────▶  │ LB (:8000) │ ────────▶  │ EC2-1/2/3│
- *  │ (Browser)│              │            │            │(:3001-03)│
- *  └──────────┘              └─────┬──────┘            └──────────┘
- *                                  │
- *                           WebSocket (:9090)
- *                                  │
- *                            ┌─────▼──────┐
- *                            │ Dashboard  │
- *                            │  (:4000)   │
- *                            └────────────┘
- *
- *  1. Client gửi HTTP request đến cổng 8000
- *  2. LB chọn server backend (EC2) theo thuật toán (round-robin / least-connections / weighted)
- *  3. http-proxy chuyển tiếp request đến server được chọn
- *  4. Kết quả trả về client, đồng thời ghi log + cập nhật thống kê
- *  5. wsServer.js phát dữ liệu thống kê qua WebSocket mỗi 1 giây → Dashboard hiển thị
- *
- *  CÁC API NỘI BỘ (không proxy, không đếm vào traffic):
- *  - GET  /health           → Health check của chính LB
- *  - GET  /lb/stats         → Trả JSON thống kê cho dashboard
- *  - POST /lb/aws-log       → Nhận log từ EC2 khi request đi qua AWS ALB thật (không qua Node LB)
- *  - GET  /lb/config        → Xem cấu hình thuật toán + danh sách server
- *  - POST /lb/config/algorithm?name=X  → Đổi thuật toán cân bằng tải
- *  - POST /lb/config/server?id=X&enabled=true/false  → Bật/tắt server
- * ============================================================================
- */
+
 
 const http = require('http');
 const httpProxy = require('http-proxy');    // Thư viện proxy HTTP — chuyển tiếp request đến backend
 const config = require('../config/servers.json'); // Cấu hình trung tâm: port, thuật toán, danh sách server
 
-// ── Import các module con ──────────────────────────────────────────────────
-// balancer.js  : Chọn server theo thuật toán, quản lý trạng thái server
-// healthCheck.js: Kiểm tra sức khỏe server định kỳ (mỗi 5s)
-// logger.js    : Ghi log request, tính RPS, latency, metrics
-// wsServer.js  : Phát dữ liệu realtime qua WebSocket cho Dashboard
+
 const {
   getNextServer,           // Chọn server tiếp theo theo thuật toán
   getAlgorithm,            // Lấy tên thuật toán đang dùng
@@ -193,10 +157,10 @@ const server = http.createServer((req, res) => {
     }
   }
 
-  // ══════════════════════════════════════════════════════════════════════════
+
   // CÂN BẰNG TẢI CHÍNH — Chỉ đến đây mới thực sự proxy và đếm request
   // Thuật toán chọn server ở balancer.js: round-robin / least-connections / weighted
-  // ══════════════════════════════════════════════════════════════════════════
+  
   console.log(`${id} [PROXY] --> routing to backend`);
 
   // Gọi balancer để chọn server backend tiếp theo

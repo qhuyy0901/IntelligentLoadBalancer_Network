@@ -1,23 +1,4 @@
-/**
- * ============================================================================
- *  BALANCER — Module Thuật Toán Cân Bằng Tải
- * ============================================================================
- *
- *  Hỗ trợ 3 thuật toán:
- *  ┌─────────────────────────┬────────────────────────────────────────────────┐
- *  │ round-robin             │ Chia đều lần lượt: A → B → C → A → B → C     │
- *  │ least-connections       │ Chọn server đang có ít kết nối nhất           │
- *  │ weighted-round-robin    │ Chia theo trọng số (weight) trong config      │
- *  └─────────────────────────┴────────────────────────────────────────────────┘
- *
- *  Ngoài ra module này quản lý TRẠNG THÁI từng server:
- *  - status: 'up' / 'down' (cập nhật bởi healthCheck.js)
- *  - activeConnections: số kết nối đang xử lý (tăng/giảm bởi index.js)
- *  - requestCount: tổng số request đã xử lý (chỉ tăng)
- *
- *  Được import bởi: index.js, healthCheck.js, wsServer.js
- * ============================================================================
- */
+
 
 const config = require('../config/servers.json');
 

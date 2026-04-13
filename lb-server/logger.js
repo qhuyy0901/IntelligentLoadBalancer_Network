@@ -1,19 +1,4 @@
-/**
- * ============================================================================
- *  LOGGER — Ghi Log & Tính Toán Metrics Hiệu Năng
- * ============================================================================
- *
- *  Module này thực hiện 3 nhiệm vụ:
- *  1. Lưu trữ request gần nhất trong circular buffer (tối đa 100 entry)
- *  2. Theo dõi tốc độ request (RPS) theo từng server trong cửa sổ 8 giây
- *  3. Tính metrics hiệu năng trong cửa sổ 10 giây:
- *     - throughputRps: số request/giây
- *     - latencyAvgMs, latencyP50Ms, latencyP975Ms, latencyP99Ms: độ trễ
- *     - packetLossPct, successRatePct: tỷ lệ thành công/thất bại
- *
- *  Dữ liệu được wsServer.js đọc mỗi 1 giây để phát qua WebSocket → Dashboard
- * ============================================================================
- */
+
 
 const config = require('../config/servers.json');
 

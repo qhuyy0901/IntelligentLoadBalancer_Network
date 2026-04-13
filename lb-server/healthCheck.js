@@ -1,18 +1,4 @@
-/**
- * ============================================================================
- *  HEALTH CHECK — Kiểm Tra Sức Khỏe Server Định Kỳ
- * ============================================================================
- *
- *  LUỒNG HOẠT ĐỘNG:
- *  1. Mỗi 5 giây, gửi GET /health đến từng EC2 server
- *  2. Nếu trả về HTTP 200 → server "up" (khỏe mạnh)
- *  3. Nếu lỗi hoặc timeout 3s → tăng bộ đếm fail
- *  4. Sau 3 lần fail LIÊN TIẾP → đánh dấu "down" (loại khỏi pool cân bằng tải)
- *  5. Chỉ cần 1 lần success → phục hồi "up" ngay lập tức
- *
- *  Cơ chế threshold tránh "flapping" (UP/DOWN liên tục do mạng không ổn định)
- * ============================================================================
- */
+
 
 const http = require('http');
 const config = require('../config/servers.json');

@@ -1,32 +1,14 @@
-/**
- * ============================================================================
- *  APP.JS — Bộ Điều Khiển Chính Dashboard
- * ============================================================================
- *
- *  File này là "bộ não" của dashboard, thực hiện:
- *  1. Lắng nghe sự kiện 'lb-stats' từ ws.js (dữ liệu WebSocket mỗi 1 giây)
- *  2. Render bảng trạng thái server (Server Table)
- *  3. Render bảng lịch sử request (Recent Requests)
- *  4. Cập nhật metrics hiệu năng (throughput, latency, packet loss...)
- *  5. Gọi updateChart() trong chart-init.js để cập nhật biểu đồ
- *  6. Xử lý tương tác: bật/tắt server, mở modal chi tiết, tạo traffic test
- *
- *  NGUỒN DỮ LIỆU:
- *  - WebSocket (ws.js) phát sự kiện 'lb-stats' chứa toàn bộ thống kê
- *  - HTTP API: LB_API_BASE/lb/config/server để bật/tắt server
- *  - HTTP API: LB_API_BASE (fetch trực tiếp) để tạo traffic test
- * ============================================================================
- */
+
 
 // ── LB API base URL — dùng host hiện tại để hoạt động cả local lẫn EC2 public
 const LB_PORT = 8000;  // Phải khớp với config/servers.json → loadBalancer.port
 const LB_API_BASE = `http://${window.location.hostname}:${LB_PORT}`;
 
-// ── Bảng màu tương ứng từng EC2 server ────────────────────────────────────
+// ── Bảng màu tương ứng từng EC2 server 
 const COLORS = {
-  'ec2-1': '#2dd4bf',
-  'ec2-2': '#3b82f6',
-  'ec2-3': '#f59e0b'
+  'ec2-1': '#0bf52a',
+  'ec2-2': '#f50b0b',
+  'ec2-3': '#490bf5'
 };
 
 // ── Lưu tham chiếu các phần tử DOM ────────────────────────────────────────
@@ -49,12 +31,12 @@ const metricAlgorithmEl = document.getElementById('metricAlgorithm');
 const metricPoolHealthEl = document.getElementById('metricPoolHealth');
 const metricModeHintEl = document.getElementById('metricModeHint');
 
-// ── Đóng banner thông báo ─────────────────────────────────────────────────
+// ── Đóng banner thông báo 
 document.getElementById('alertClose').addEventListener('click', () => {
   document.getElementById('alertBanner').classList.add('hidden');
 });
 
-// ── Nút Refresh ───────────────────────────────────────────────────────────
+// ── Nút Refresh 
 ['refreshBtn', 'refreshBtn2'].forEach(id => {
   document.getElementById(id).addEventListener('click', () => {
     lastUpdatedEl.textContent = 'Đang làm mới...';
@@ -88,7 +70,7 @@ if (generateBtn) {
   });
 }
 
-// ── Bật/Tắt EC2 Server từ Dashboard ─────────────────────────────────────
+// ── Bật/Tắt EC2 Server từ Dashboard 
 async function toggleServer(serverId, currentEnabled) {
   const newEnabled = !currentEnabled;
   try {
@@ -98,7 +80,7 @@ async function toggleServer(serverId, currentEnabled) {
   }
 }
 
-// ── Logic Modal Chi Tiết Server ───────────────────────────────────────────
+// ── Logic Modal Chi Tiết Server 
 let serverSnapshot = {}; // Lưu bản sao dữ liệu server mới nhất
 
 function formatMetricCount(value) {
@@ -143,7 +125,7 @@ function openModal(serverId) {
     <div class="modal-stat"><span class="modal-stat-label">Tên server</span><span class="modal-stat-value">${s.name}</span></div>
     <div class="modal-stat"><span class="modal-stat-label">Domain</span><span class="modal-stat-value">${s.domain}</span></div>
     <div class="modal-stat"><span class="modal-stat-label">Cổng (Port)</span><span class="modal-stat-value">${s.port}</span></div>
-    <div class="modal-stat"><span class="modal-stat-label">Trạng thái</span><span class="modal-stat-value" style="color:${s.status === 'up' ? '#86efac' : '#fca5a5'}">${s.status === 'up' ? 'HOẠT ĐỘNG' : 'NGỪNG'}</span></div>
+    <div class="modal-stat"><span class="modal-stat-label">Trạng thái</span><span class="modal-stat-value" style="color:${s.status === 'up' ? '#86efac' : '#fca5a5'}">${s.status === 'up' ? 'Active' : 'Disabled'}</span></div>
     <div class="modal-stat"><span class="modal-stat-label">Tổng request đã xử lý</span><span class="modal-stat-value">${s.requestCount}</span></div>
     <div class="modal-stat"><span class="modal-stat-label">Kết nối đang xử lý</span><span class="modal-stat-value">${s.activeConnections}</span></div>
     <div class="modal-stat"><span class="modal-stat-label">Request / 2 giây</span><span class="modal-stat-value">${s.rps}</span></div>
@@ -166,7 +148,7 @@ document.getElementById('btnAllDetails').addEventListener('click', () => {
   if (first) openModal(first);
 });
 
-// ── Render Bảng Trạng Thái Server ─────────────────────────────────────────
+// ── Render Bảng Trạng Thái Server 
 function renderServerTable(servers) {
   serverSnapshot = {};
   servers.forEach(s => { serverSnapshot[s.id] = s; });
@@ -177,7 +159,7 @@ function renderServerTable(servers) {
     const color = COLORS[s.id] || '#fff';
     const statusClass = !isEnabled ? 'status-disabled' : (isUp ? 'status-up' : 'status-down');
     const statusDot = !isEnabled ? 'disabled' : s.status;
-    const statusText = !isEnabled ? 'Tạm loại' : (isUp ? 'Hoạt động' : 'Ngừng');
+    const statusText = !isEnabled ? 'Paused' : (isUp ? 'Active' : 'Disabled');
     return `
       <tr>
         <td>
@@ -204,10 +186,10 @@ function renderServerTable(servers) {
         <td><span class="req-count">${s.requestCount}</span></td>
         <td>
           <div style="display:flex;gap:6px;align-items:center">
-            <button class="btn-detail" onclick="openModal('${s.id}')">Chi tiết ›</button>
+            <button class="btn-detail" onclick="openModal('${s.id}')">Details ›</button>
             <button class="btn-toggle ${isEnabled ? 'btn-toggle-off' : 'btn-toggle-on'}"
               onclick="toggleServer('${s.id}', ${isEnabled})"
-              title="${isEnabled ? 'Loại khỏi target group' : 'Thêm vào target group'}">
+              title="${isEnabled ? 'Remove from target group' : 'Add to target group'}">
               ${isEnabled ? 'Disable' : 'Enable'}
             </button>
           </div>
@@ -255,7 +237,7 @@ function renderPerformanceMetrics(metrics = {}, algorithm = 'round-robin', serve
   alertTextEl.innerHTML = `Load balancer is <strong>running</strong> in ${formatAlgorithmName(algorithm)} mode with ${healthyCount}/${totalCount} healthy backends.`;
 }
 
-// ── Render Bảng Lịch Sử Request ───────────────────────────────────────────
+// ── Render Bảng Lịch Sử Request 
 
 // Định dạng thời gian hiển thị
 function formatTime(iso) {
@@ -278,7 +260,6 @@ function distChip(serverId, serverName) {
 // Lưu lịch sử IP — theo dõi server nào đã xử lý request từ IP đó
 const ipHistory = {};
 
-// ✅ FIX ANTI-DUPLICATE: Lưu các request đã render để tránh hiển thị trùng
 // Key = "clientIp-timestamp-serverId", tự động xóa sau 30 giây để không rò bộ nhớ
 const processedRequests = new Set();
 function addProcessedKey(key) {
@@ -326,8 +307,7 @@ function renderRequestsTable(requests) {
   }).join('');
 }
 
-// ── Xử Lý Sự Kiện WebSocket Stats ─────────────────────────────────────────
-// ✅ FIX THROTTLE: Chặn WebSocket spam — nếu event đến trong vòng 200ms thì bỏ qua
+// ── Xử Lý Sự Kiện WebSocket Stats 
 let lastUpdateTime = 0;
 
 window.addEventListener('lb-stats', (e) => {

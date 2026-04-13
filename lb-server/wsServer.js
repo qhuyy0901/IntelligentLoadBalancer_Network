@@ -1,22 +1,4 @@
-/**
- * ============================================================================
- *  WEBSOCKET SERVER — Phát Dữ Liệu Thời Gian Thực Cho Dashboard
- * ============================================================================
- *
- *  LUỒNG HOẠT ĐỘNG:
- *  1. Mở WebSocket server tại cổng 9090 (cấu hình trong servers.json)
- *  2. Dashboard (ws.js) kết nối WebSocket đến ws://localhost:9090
- *  3. Mỗi 1 GIÂY, đóng gói dữ liệu thống kê và broadcast đến TẤT CẢ client:
- *     - Trạng thái server (up/down, requestCount, activeConnections)
- *     - Tốc độ request (RPS) theo từng server
- *     - 20 request gần nhất
- *     - Metrics hiệu năng (throughput, latency, packet loss...)
- *     - Thuật toán đang sử dụng
- *
- *  Đây là cầu nối dữ liệu giữa lb-server và dashboard (single-direction: LB → Dashboard)
- * ============================================================================
- */
-
+// wsServer.js — WebSocket server để gửi dữ liệu realtime đến dashboard
 const WebSocket = require('ws');
 const config = require('../config/servers.json');
 const { getServerStates, getAlgorithm, getServersConfig } = require('./balancer');

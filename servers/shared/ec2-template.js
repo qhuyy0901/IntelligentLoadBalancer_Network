@@ -1,22 +1,4 @@
-/**
- * ============================================================================
- *  EC2 SERVER TEMPLATE — Module Dùng Chung Cho Tất Cả EC2 Instance
- * ============================================================================
- *
- *  File này chứa TOÀN BỘ logic cho một EC2 mock server:
- *  - Express server với HTML response (trang web hiển thị thông tin instance)
- *  - API routes: /api/:action (deploy, ping...), /health, /stats
- *  - Middleware đếm request
- *  - Gửi log về LB dashboard khi request đi qua AWS ALB thật
- *
- *  Mỗi server (ec2-1, ec2-2, ec2-3) chỉ cần truyền cấu hình riêng:
- *    const createEC2Server = require('../shared/ec2-template');
- *    createEC2Server({ port: 3001, serverId: 'ec2-1', serverName: 'EC2-1',
- *                      instance: { ip, domain, region, zone, type, accent, accentRGB } });
- *
- *  Ưu điểm: Tránh trùng lặp ~683 dòng × 3 file = ~2049 dòng code duplicate
- * ============================================================================
- */
+// ec2-template.js — Mẫu code cho EC2 instance giả lập
 
 const express = require('express');
 const http = require('http');

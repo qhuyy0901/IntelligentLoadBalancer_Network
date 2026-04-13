@@ -1,13 +1,4 @@
-/**
- * Script Kiểm Tra Phân Phối Traffic
- * Gửi N HTTP request đến Load Balancer và in kết quả phân phối
- *
- * Cách dùng:
- *   node scripts/testTraffic.js [số_request] [số_song_song]
- * Ví dụ:
- *   node scripts/testTraffic.js 30 5    → 30 request, 5 request cùng lúc
- *   node scripts/testTraffic.js 100 10  → 100 request, 10 request cùng lúc
- */
+// testTraffic.js — Script đơn giản để gửi nhiều request đến Load Balancer và kiểm tra phân phối traffic
 
 const http = require('http');
 
