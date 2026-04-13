@@ -1,10 +1,21 @@
 /**
- * Target Group Page — Hiển thị AWS-style Target Group
- * Danh sách EC2, status healthy/unhealthy, request count, RPS, active connections
+ * ============================================================================
+ *  TARGET GROUP — Trang Quản Lý Nhóm Server Kiểu AWS
+ * ============================================================================
+ *
+ *  Trang này mô phỏng giao diện AWS Target Group, hiển thị:
+ *  - Danh sách EC2 instance với trạng thái healthy / unhealthy / draining
+ *  - Lịch sử health check (sparkbar 30 lần check gần nhất)
+ *  - Tổng hợp: số server khỏe, tổng request, RPS, connections
+ *  - Nút Register / Deregister để bật/tắt server khỏi pool (gọi API LB)
+ *  - Modal chi tiết từng server
+ *
+ *  NGUỒN DỮ LIỆU: Lắng nghe sự kiện 'lb-stats' từ ws.js (giống app.js)
+ * ============================================================================
  */
 
-/* ── AWS Health Check History per instance ────────────────── */
-const healthHistory = {}; // { serverId: [ 'healthy' | 'unhealthy', ... ] (last 30) }
+/* ── Lịch sử Health Check theo từng instance ─────────────── */
+const healthHistory = {}; // { serverId: [ 'healthy' | 'unhealthy', ... ] (tối đa 30 lần) }
 const MAX_HISTORY = 30;
 
 function pushHealth(serverId, isHealthy) {

@@ -1,10 +1,25 @@
 /**
- * Bộ Điều Khiển Chính Dashboard
- * Nhận sự kiện lb-stats từ ws.js và cập nhật toàn bộ giao diện
+ * ============================================================================
+ *  APP.JS — Bộ Điều Khiển Chính Dashboard
+ * ============================================================================
+ *
+ *  File này là "bộ não" của dashboard, thực hiện:
+ *  1. Lắng nghe sự kiện 'lb-stats' từ ws.js (dữ liệu WebSocket mỗi 1 giây)
+ *  2. Render bảng trạng thái server (Server Table)
+ *  3. Render bảng lịch sử request (Recent Requests)
+ *  4. Cập nhật metrics hiệu năng (throughput, latency, packet loss...)
+ *  5. Gọi updateChart() trong chart-init.js để cập nhật biểu đồ
+ *  6. Xử lý tương tác: bật/tắt server, mở modal chi tiết, tạo traffic test
+ *
+ *  NGUỒN DỮ LIỆU:
+ *  - WebSocket (ws.js) phát sự kiện 'lb-stats' chứa toàn bộ thống kê
+ *  - HTTP API: LB_API_BASE/lb/config/server để bật/tắt server
+ *  - HTTP API: LB_API_BASE (fetch trực tiếp) để tạo traffic test
+ * ============================================================================
  */
 
 // ── LB API base URL — dùng host hiện tại để hoạt động cả local lẫn EC2 public
-const LB_PORT = 8000;
+const LB_PORT = 8000;  // Phải khớp với config/servers.json → loadBalancer.port
 const LB_API_BASE = `http://${window.location.hostname}:${LB_PORT}`;
 
 // ── Bảng màu tương ứng từng EC2 server ────────────────────────────────────

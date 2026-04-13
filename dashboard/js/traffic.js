@@ -1,6 +1,17 @@
 /**
- * Traffic Page — Real-time ALB Traffic Monitor
- * Hiển thị traffic từ AWS ALB xuống EC2: chart realtime, log history, filter, stats
+ * ============================================================================
+ *  TRAFFIC — Trang Giám Sát Traffic Thời Gian Thực (Kiểu AWS ALB)
+ * ============================================================================
+ *
+ *  Trang này hiển thị chi tiết traffic đi qua Load Balancer:
+ *  - Biểu đồ RPS realtime theo từng server (cửa sổ 60 giây)
+ *  - Bảng log request với filter theo server
+ *  - Thống kê: tổng RPS, tổng request, server khỏe, latency, connections, error rate
+ *  - Thanh RPS mini cho từng server
+ *  - Nút tạo traffic test (20 request liên tiếp)
+ *
+ *  NGUỒN DỮ LIỆU: Lắng nghe sự kiện 'lb-stats' từ ws.js
+ * ============================================================================
  */
 
 const LB_BASE_TRAFFIC = `http://${window.location.hostname}:8000`;

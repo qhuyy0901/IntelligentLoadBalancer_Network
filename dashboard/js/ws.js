@@ -1,10 +1,26 @@
 /**
- * WebSocket Client — Kết nối nhận dữ liệu thời gian thực từ Load Balancer
- * Tự động kết nối lại nếu bị mất kết nối
- * WS_URL tự động dùng host hiện tại → hoạt động cả local lẫn EC2 public
+ * ============================================================================
+ *  WEBSOCKET CLIENT — Kết Nối Nhận Dữ Liệu Thời Gian Thực Từ LB
+ * ============================================================================
+ *
+ *  LUỒNG DỮ LIỆU:
+ *  ┌──────────────┐   WebSocket    ┌──────────┐  CustomEvent   ┌──────────┐
+ *  │ wsServer.js  │ ──────────▶   │  ws.js   │ ────────────▶ │  app.js  │
+ *  │ (LB :9090)   │  JSON mỗi 1s  │(Dashboard)│  'lb-stats'   │chart-init│
+ *  └──────────────┘               └──────────┘               │target-grp│
+ *                                                             │traffic.js│
+ *                                                             └──────────┘
+ *
+ *  1. Kết nối WebSocket đến ws://hostname:9090
+ *  2. Nhận JSON { type:'stats', servers, recentRequests, metrics, algorithm }
+ *  3. Phát CustomEvent 'lb-stats' → các module khác lắng nghe và cập nhật UI
+ *  4. Tự động kết nối lại sau 3 giây nếu mất kết nối
+ *
+ *  WS_URL dùng window.location.hostname → hoạt động cả localhost lẫn EC2 public IP
+ * ============================================================================
  */
 
-const WS_PORT = 9090;
+const WS_PORT = 9090;  // Phải khớp với config/servers.json → loadBalancer.wsPort
 const WS_URL = `ws://${window.location.hostname}:${WS_PORT}`;
 let ws;
 let reconnectTimer;

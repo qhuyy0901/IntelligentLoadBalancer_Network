@@ -1,10 +1,4 @@
-/* ================================================
-   Intelligent Load Balancer – Dashboard Styles
-   Design: Navy/Teal premium theme with animations
-   Supports light & dark modes
-================================================ */
 
-/* ─── Dark Theme (default) ──────────────────── */
 :root {
   --bg-main: #1a2035;
   --bg-card: #1e2a45;
@@ -48,7 +42,7 @@
   --modal-overlay: rgba(0,0,0,0.6);
 }
 
-/* ─── Light Theme ───────────────────────────── */
+
 [data-theme="light"] {
   --bg-main: #f0f2f5;
   --bg-card: #ffffff;
@@ -87,7 +81,7 @@
   --modal-overlay: rgba(0,0,0,0.35);
 }
 
-/* ─── Reset & Base ───────────────────────────── */
+
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
 html { scroll-behavior: smooth; }
@@ -101,7 +95,7 @@ body {
   line-height: 1.5;
 }
 
-/* ─── Header ─────────────────────────────────── */
+
 .header {
   background: var(--bg-header);
   border-bottom: 1px solid var(--border);
@@ -170,7 +164,7 @@ body {
 }
 .nav-admin:hover { background: rgba(59, 130, 246, 0.25); color: #bfdbfe; }
 
-/* ─── Main Layout ────────────────────────────── */
+
 .main {
   max-width: 1440px;
   margin: 0 auto;
@@ -180,7 +174,7 @@ body {
   gap: 24px;
 }
 
-/* ─── Alert Banner ───────────────────────────── */
+
 .alert-banner {
   background: var(--alert-bg);
   border: 1px solid var(--alert-border);
@@ -226,7 +220,7 @@ body {
 }
 .alert-close:hover { color: var(--text-primary); background: var(--bg-subtle-hover); }
 
-/* ─── Top Grid ───────────────────────────────── */
+
 .grid-top {
   display: grid;
   grid-template-columns: 1fr 1fr;
@@ -311,7 +305,7 @@ body {
   color: #bfdbfe;
 }
 
-/* ─── Cards ──────────────────────────────────── */
+
 .card {
   background: var(--bg-card);
   border: 1px solid var(--border);
@@ -345,7 +339,7 @@ body {
   margin-top: 18px;
 }
 
-/* ─── Server Table ───────────────────────────── */
+
 .server-table {
   width: 100%;
   border-collapse: collapse;
@@ -451,7 +445,7 @@ body {
   color: var(--text-primary);
 }
 
-/* ─── Buttons ────────────────────────────────── */
+
 .btn-primary {
   background: var(--accent-blue);
   color: #fff;

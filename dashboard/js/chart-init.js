@@ -1,9 +1,22 @@
 /**
- * Khởi Tạo Biểu Đồ Phân Phối Lưu Lượng (Traffic Distribution)
- * Biểu đồ đường thời gian thực dùng Chart.js — cửa sổ 45 điểm
+ * ============================================================================
+ *  CHART-INIT — Biểu Đồ Phân Phối Lưu Lượng Thời Gian Thực
+ * ============================================================================
+ *
+ *  Biểu đồ đường (Line Chart) dùng Chart.js hiển thị số request/giây
+ *  của từng EC2 server trong cửa sổ trượt 45 giây.
+ *
+ *  CƠ CHẾ:
+ *  1. app.js gọi updateChart(servers) mỗi khi nhận dữ liệu từ WebSocket
+ *  2. Tính delta = requestCount hiện tại - requestCount lần trước → req/s
+ *  3. Đẩy delta vào hàng đợi 45 điểm, dịch biểu đồ sang trái
+ *  4. Mỗi đường biểu diễn 1 server: EC2-1 (xanh lá), EC2-2 (xanh dương), EC2-3 (vàng)
+ *
+ *  Hàm updateChart() được export ra window.updateChart để app.js gọi
+ * ============================================================================
  */
 
-const MAX_POINTS = 45; // Số điểm dữ liệu hiển thị trên biểu đồ (mỗi điểm ~1s)
+const MAX_POINTS = 45; // Số điểm dữ liệu hiển thị trên biểu đồ (mỗi điểm ~1 giây)
 
 // Nhãn trục X: từ -45s đến Now
 const labels = Array.from({ length: MAX_POINTS }, (_, i) => `-${MAX_POINTS - i} s`);

@@ -14,7 +14,7 @@ const http = require('http');
 const COUNT       = parseInt(process.argv[2]) || 30;  // Tổng số request cần gửi
 const CONCURRENCY = parseInt(process.argv[3]) || 5;   // Số request gửi cùng một lúc
 const LB_HOST     = 'localhost';
-const LB_PORT     = 3000;
+const LB_PORT     = 8000; // Cổng Load Balancer (phải khớp với config/servers.json)
 
 let completed = 0;
 let stats = {}; // Đếm request theo tên server

@@ -1,31 +1,74 @@
-const http = require('http');
-const httpProxy = require('http-proxy');
-const config = require('../config/servers.json');
+/**
+ * ============================================================================
+ *  LOAD BALANCER — Máy chủ cân bằng tải chính (Entry Point)
+ * ============================================================================
+ *
+ *  LUỒNG HOẠT ĐỘNG TỔNG QUAN:
+ *  ┌──────────┐     HTTP      ┌────────────┐   proxy    ┌──────────┐
+ *  │  Client  │ ──────────▶  │ LB (:8000) │ ────────▶  │ EC2-1/2/3│
+ *  │ (Browser)│              │            │            │(:3001-03)│
+ *  └──────────┘              └─────┬──────┘            └──────────┘
+ *                                  │
+ *                           WebSocket (:9090)
+ *                                  │
+ *                            ┌─────▼──────┐
+ *                            │ Dashboard  │
+ *                            │  (:4000)   │
+ *                            └────────────┘
+ *
+ *  1. Client gửi HTTP request đến cổng 8000
+ *  2. LB chọn server backend (EC2) theo thuật toán (round-robin / least-connections / weighted)
+ *  3. http-proxy chuyển tiếp request đến server được chọn
+ *  4. Kết quả trả về client, đồng thời ghi log + cập nhật thống kê
+ *  5. wsServer.js phát dữ liệu thống kê qua WebSocket mỗi 1 giây → Dashboard hiển thị
+ *
+ *  CÁC API NỘI BỘ (không proxy, không đếm vào traffic):
+ *  - GET  /health           → Health check của chính LB
+ *  - GET  /lb/stats         → Trả JSON thống kê cho dashboard
+ *  - POST /lb/aws-log       → Nhận log từ EC2 khi request đi qua AWS ALB thật (không qua Node LB)
+ *  - GET  /lb/config        → Xem cấu hình thuật toán + danh sách server
+ *  - POST /lb/config/algorithm?name=X  → Đổi thuật toán cân bằng tải
+ *  - POST /lb/config/server?id=X&enabled=true/false  → Bật/tắt server
+ * ============================================================================
+ */
 
+const http = require('http');
+const httpProxy = require('http-proxy');    // Thư viện proxy HTTP — chuyển tiếp request đến backend
+const config = require('../config/servers.json'); // Cấu hình trung tâm: port, thuật toán, danh sách server
+
+// ── Import các module con ──────────────────────────────────────────────────
+// balancer.js  : Chọn server theo thuật toán, quản lý trạng thái server
+// healthCheck.js: Kiểm tra sức khỏe server định kỳ (mỗi 5s)
+// logger.js    : Ghi log request, tính RPS, latency, metrics
+// wsServer.js  : Phát dữ liệu realtime qua WebSocket cho Dashboard
 const {
-  getNextServer,
-  getAlgorithm,
-  setAlgorithm,
-  getSupportedAlgorithms,
-  setServerEnabled,
-  getServersConfig,
-  incrementConnections,
-  decrementConnections,
-  incrementRequestCount
+  getNextServer,           // Chọn server tiếp theo theo thuật toán
+  getAlgorithm,            // Lấy tên thuật toán đang dùng
+  setAlgorithm,            // Đổi thuật toán
+  getSupportedAlgorithms,  // Danh sách thuật toán hỗ trợ
+  setServerEnabled,        // Bật/tắt server khỏi pool
+  getServersConfig,        // Lấy cấu hình server (id, name, enabled, weight)
+  getServerStates,         // Lấy trạng thái realtime (requestCount, activeConnections, status)
+  incrementConnections,    // +1 kết nối đang xử lý
+  decrementConnections,    // -1 kết nối khi xong
+  incrementRequestCount    // +1 tổng request đã xử lý
 } = require('./balancer');
 
 const { startHealthChecks } = require('./healthCheck');
-const { logRequest, logFailure, getRates, getLoadBalancingMetrics } = require('./logger');
+const { logRequest, logFailure, getRates, getRecentRequests, getLoadBalancingMetrics } = require('./logger');
 const { startWebSocketServer } = require('./wsServer');
 
+// Cổng Load Balancer — lấy từ config, mặc định 3000 nếu không có
 const LB_PORT = config.loadBalancer.port || 3000;
+
+// Tạo proxy server — xử lý việc chuyển tiếp HTTP request đến backend
 const proxy = httpProxy.createProxyServer({});
 
-// ── DEBUG: ID duy nhat cho moi request de trace ──────────────────────────
+// ── DEBUG: Gán ID duy nhất cho mỗi request để dễ trace trong console ─────
 let _reqId = 0;
 const nextId = () => `[R${String(++_reqId).padStart(4,'0')}]`;
 
-// Loi proxy toan cuc
+// Xử lý lỗi proxy toàn cục — khi backend không phản hồi, trả 502 Bad Gateway
 proxy.on('error', (err, req, res) => {
   console.error('[LB ERROR]:', err.message);
   if (!res.headersSent) {
@@ -34,11 +77,12 @@ proxy.on('error', (err, req, res) => {
   }
 });
 
+// ── TẠO HTTP SERVER — Xử lý mọi request đến cổng LB_PORT ─────────────────
 const server = http.createServer((req, res) => {
-  const id = nextId(); // ID duy nhat cho moi request
+  const id = nextId(); // Gán ID để trace request trong log
   console.log(`${id} --> ${req.method} ${req.url} (from ${req.socket.remoteAddress})`);
 
-  // CORS
+  // CORS — cho phép Dashboard (port 4000) gọi API của LB (port 8000)
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
@@ -49,7 +93,7 @@ const server = http.createServer((req, res) => {
     return res.end();
   }
 
-  // Chan request rac cua browser (favicon, robots...)
+  // Chặn request rác của browser (favicon, robots...) — không proxy, không đếm
   const IGNORE = [
     '/favicon.ico', '/robots.txt',
     '/apple-touch-icon.png', '/apple-touch-icon-precomposed.png',
@@ -62,18 +106,18 @@ const server = http.createServer((req, res) => {
     return res.end();
   }
 
-  // Health check cua LB (khong proxy, khong dem)
+  // Health check của chính LB — trả OK nếu LB đang chạy (không proxy, không đếm)
   if (req.url === '/health') {
     console.log(`${id} [FILTER] health check`);
     res.writeHead(200, { 'Content-Type': 'application/json' });
     return res.end(JSON.stringify({ status: 'ok' }));
   }
 
-  // API stats cho dashboard (khong proxy, khong dem)
+  // API thống kê cho Dashboard — trả JSON chứa trạng thái server, request gần đây, metrics
   if (req.url === '/lb/stats') {
     console.log(`${id} [FILTER] /lb/stats`);
-    const states = require('./balancer').getServerStates();
-    const recent = require('./logger').getRecentRequests(20);
+    const states = getServerStates();
+    const recent = getRecentRequests(20);
     res.setHeader('Content-Type', 'application/json');
     return res.end(JSON.stringify({
       servers: states, recentRequests: recent,
@@ -119,10 +163,9 @@ const server = http.createServer((req, res) => {
     return;
   }
 
-  // API config (khong dem)
+  // API cấu hình — cho phép Dashboard đổi thuật toán hoặc bật/tắt server
   if (req.url.startsWith('/lb/config')) {
     console.log(`${id} [FILTER] /lb/config`);
-    // Xu ly config API
     if (req.url.startsWith('/lb/config/algorithm') && req.method === 'POST') {
       const parsed = new URL(req.url, `http://localhost:${LB_PORT}`);
       const algorithm = parsed.searchParams.get('name');
@@ -150,9 +193,13 @@ const server = http.createServer((req, res) => {
     }
   }
 
-  // LOAD BALANCING CHINH - chi den day moi dem request
+  // ══════════════════════════════════════════════════════════════════════════
+  // CÂN BẰNG TẢI CHÍNH — Chỉ đến đây mới thực sự proxy và đếm request
+  // Thuật toán chọn server ở balancer.js: round-robin / least-connections / weighted
+  // ══════════════════════════════════════════════════════════════════════════
   console.log(`${id} [PROXY] --> routing to backend`);
 
+  // Gọi balancer để chọn server backend tiếp theo
   const target = getNextServer();
 
   if (!target) {
@@ -163,17 +210,19 @@ const server = http.createServer((req, res) => {
 
   const targetUrl = `http://${target.host}:${target.port}`;
 
+  // Lấy IP thật của client (chuẩn hóa IPv6 → IPv4)
   let clientIp = req.headers['x-forwarded-for'] || req.socket.remoteAddress || '0.0.0.0';
-  if (clientIp === '::1') clientIp = '127.0.0.1';           // IPv6 loopback
-  else if (clientIp.startsWith('::ffff:')) clientIp = clientIp.slice(7); // IPv4-mapped
+  if (clientIp === '::1') clientIp = '127.0.0.1';           // IPv6 loopback → IPv4
+  else if (clientIp.startsWith('::ffff:')) clientIp = clientIp.slice(7); // IPv4-mapped IPv6
 
+  // Thêm header để backend biết request đi qua LB
   req.headers['x-forwarded-for'] = clientIp;
   req.headers['x-load-balancer'] = 'IntelligentLB/1.0';
 
   const startTime = Date.now();
   let doneCalled = false;
 
-  // Ham hoan tat: dem request + ghi log (chi khi response gui thanh cong)
+  // Hàm hoàn tất: đếm +1 request + ghi log (chỉ gọi khi response gửi thành công)
   const done = () => {
     if (doneCalled) return;
     doneCalled = true;
@@ -181,10 +230,10 @@ const server = http.createServer((req, res) => {
     incrementRequestCount(target.id);
     const duration = Date.now() - startTime;
     logRequest({ clientIp, serverId: target.id, serverName: target.name, timestamp: new Date(), duration });
-    console.log(`${id} [DONE] counted +1 -> ${target.name} (${duration}ms) total=${require('./balancer').getServerStates()[target.id]?.requestCount}`);
+    console.log(`${id} [DONE] counted +1 -> ${target.name} (${duration}ms) total=${getServerStates()[target.id]?.requestCount}`);
   };
 
-  // Ham giai phong ket noi khi client bo giua chung (KHONG dem request)
+  // Hàm xử lý khi client ngắt giữa chừng — giải phóng kết nối nhưng KHÔNG đếm request
   const abort = () => {
     if (doneCalled) return;
     doneCalled = true;
@@ -192,17 +241,19 @@ const server = http.createServer((req, res) => {
     console.log(`${id} [ABORT] client disconnect, NOT counted`);
   };
 
+  // Đánh dấu +1 kết nối đang xử lý, sau đó proxy request đến backend
   incrementConnections(target.id);
   proxy.web(req, res, { target: targetUrl });
 
+  // Lắng nghe sự kiện response: finish = thành công, close = client ngắt
   res.on('finish', () => { console.log(`${id} [EVENT] finish`); done(); });
   res.on('close',  () => { console.log(`${id} [EVENT] close (doneCalled=${doneCalled})`); abort(); });
 });
 
-
+// ── KHỞI ĐỘNG HỆ THỐNG ──────────────────────────────────────────────────
 server.listen(LB_PORT, '0.0.0.0', () => {
   console.log(`🚀 LB running at http://0.0.0.0:${LB_PORT}`);
 });
 
-startHealthChecks();
-startWebSocketServer();
+startHealthChecks();      // Bắt đầu kiểm tra sức khỏe server mỗi 5 giây
+startWebSocketServer();   // Bắt đầu WebSocket server phát dữ liệu cho Dashboard

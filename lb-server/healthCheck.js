@@ -1,28 +1,39 @@
 /**
- * Module Kiểm Tra Sức Khỏe Server (Health Check)
- * FIX: thêm threshold để tránh UP/DOWN liên tục
+ * ============================================================================
+ *  HEALTH CHECK — Kiểm Tra Sức Khỏe Server Định Kỳ
+ * ============================================================================
+ *
+ *  LUỒNG HOẠT ĐỘNG:
+ *  1. Mỗi 5 giây, gửi GET /health đến từng EC2 server
+ *  2. Nếu trả về HTTP 200 → server "up" (khỏe mạnh)
+ *  3. Nếu lỗi hoặc timeout 3s → tăng bộ đếm fail
+ *  4. Sau 3 lần fail LIÊN TIẾP → đánh dấu "down" (loại khỏi pool cân bằng tải)
+ *  5. Chỉ cần 1 lần success → phục hồi "up" ngay lập tức
+ *
+ *  Cơ chế threshold tránh "flapping" (UP/DOWN liên tục do mạng không ổn định)
+ * ============================================================================
  */
 
 const http = require('http');
 const config = require('../config/servers.json');
-const { updateServerStatus } = require('./balancer');
+const { updateServerStatus } = require('./balancer'); // Cập nhật trạng thái server trong balancer
 
-// ⏱️ thời gian check (5s là ổn)
+// Thời gian giữa các lần kiểm tra (mặc định 5000ms = 5 giây)
 const INTERVAL = config.loadBalancer.healthCheckInterval || 5000;
 
-// 🧠 lưu trạng thái từng server
+// Lưu trạng thái health check từng server: failCount, successCount, status
 const serverState = {};
 
-// init state — bắt đầu ở 'up' để route request ngay lập tức
+// Khởi tạo — giả định tất cả server đều "up" khi mới khởi động
 config.servers.forEach(s => {
   serverState[s.id] = {
     failCount: 0,
-    successCount: 2,    // ← pretend 2 success already so status flips to 'up'
-    status: 'up'        // ← start UP, sẽ bị DOWN nếu fail 3 lần liên tiếp
+    successCount: 2,    // Giả lập 2 lần success ban đầu → status = 'up' ngay
+    status: 'up'        // Bắt đầu UP — sẽ chuyển DOWN nếu fail 3 lần liên tiếp
   };
 });
 
-// ❌ xử lý khi fail
+// Xử lý khi health check THẤT BẠI
 function handleFail(server, resolve) {
   const state = serverState[server.id];
 
@@ -41,7 +52,7 @@ function handleFail(server, resolve) {
   resolve('down');
 }
 
-// ✅ check server
+// Kiểm tra một server bằng HTTP GET /health
 function checkServer(server) {
   return new Promise((resolve) => {
     const options = {
@@ -83,7 +94,7 @@ function checkServer(server) {
   });
 }
 
-// 🚀 start loop
+// Khởi động vòng lặp kiểm tra sức khỏe định kỳ
 function startHealthChecks() {
   console.log(`[HealthCheck] chạy mỗi ${INTERVAL}ms...`);
 

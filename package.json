@@ -5,6 +5,7 @@
   "main": "lb-server/index.js",
   "scripts": {
     "start": "concurrently --names \"EC2-1,EC2-2,EC2-3,LB\" --prefix-colors \"cyan,blue,yellow,green\" \"node servers/ec2-1/index.js\" \"node servers/ec2-2/index.js\" \"node servers/ec2-3/index.js\" \"node lb-server/index.js\"",
+    "all": "concurrently --names \"EC2-1,EC2-2,EC2-3,LB,DASH\" --prefix-colors \"cyan,blue,yellow,green,magenta\" \"node servers/ec2-1/index.js\" \"node servers/ec2-2/index.js\" \"node servers/ec2-3/index.js\" \"node lb-server/index.js\" \"npx serve dashboard -p 4000 --no-clipboard\"",
     "aws": "concurrently --names \"LB,DASH\" --prefix-colors \"green,magenta\" \"node lb-server/index.js\" \"npx serve dashboard -p 4000 --no-clipboard\"",
     "ec2-1": "node servers/ec2-1/index.js",
     "ec2-2": "node servers/ec2-2/index.js",
