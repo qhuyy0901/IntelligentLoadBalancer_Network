@@ -5,15 +5,25 @@
     "algorithm": "round-robin",
     "healthCheckInterval": 5000,
     "logBufferSize": 100,
-    "distributionWindowMs": 8000
+    "distributionWindowMs": 8000,
+    "autoScaling": {
+      "enabled": true,
+      "minCapacity": 1,
+      "desiredCapacity": 1,
+      "maxCapacity": 3,
+      "evaluationIntervalMs": 5000,
+      "cooldownMs": 10000,
+      "scaleOutRequestsInWindow": 12,
+      "scaleInRequestsInWindow": 3
+    }
   },
   "servers": [
     {
       "id": "ec2-1",
       "name": "EC2-1",
-      "host": "3.107.233.161",
-      "port": 3000,
-      "domain": "ec2-1.aws",
+      "host": "127.0.0.1",
+      "port": 3001,
+      "domain": "ec2-1.local",
       "weight": 1,
       "enabled": true,
       "color": "#2dd4bf"
@@ -21,21 +31,21 @@
     {
       "id": "ec2-2",
       "name": "EC2-2",
-      "host": "13.210.108.168",
-      "port": 3000,
-      "domain": "ec2-2.aws",
+      "host": "127.0.0.1",
+      "port": 3002,
+      "domain": "ec2-2.local",
       "weight": 1,
-      "enabled": true,
+      "enabled": false,
       "color": "#3b82f6"
     },
     {
       "id": "ec2-3",
       "name": "EC2-3",
-      "host": "15.134.221.126",
-      "port": 3000,
-      "domain": "ec2-3.aws",
+      "host": "127.0.0.1",
+      "port": 3003,
+      "domain": "ec2-3.local",
       "weight": 1,
-      "enabled": true,
+      "enabled": false,
       "color": "#f59e0b"
     }
   ]

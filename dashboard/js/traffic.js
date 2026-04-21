@@ -128,15 +128,16 @@ function updateTrafficChart(servers) {
 
 /* ── Traffic Stat Cards ───────────────────────────────────── */
 function updateTrafficStats(servers, metrics) {
-  const totalRps = servers.reduce((a, s) => a + Number(s.rps || 0), 0);
-  const totalReq = servers.reduce((a, s) => a + (s.requestCount || 0), 0);
-  const healthy = servers.filter(s => s.status === 'up' && s.enabled !== false).length;
-  const totalConn = servers.reduce((a, s) => a + (s.activeConnections || 0), 0);
+  const activeServers = servers.filter((server) => server.enabled !== false);
+  const totalRps = activeServers.reduce((a, s) => a + Number(s.rps || 0), 0);
+  const totalReq = activeServers.reduce((a, s) => a + (s.requestCount || 0), 0);
+  const healthy = activeServers.filter(s => s.status === 'up').length;
+  const totalConn = activeServers.reduce((a, s) => a + (s.activeConnections || 0), 0);
 
   const el = id => document.getElementById(id);
   if (el('tfc-total-rps')) el('tfc-total-rps').textContent = totalRps.toFixed(2);
   if (el('tfc-total-req')) el('tfc-total-req').textContent = totalReq.toLocaleString();
-  if (el('tfc-healthy')) el('tfc-healthy').textContent = `${healthy}/${servers.length}`;
+  if (el('tfc-healthy')) el('tfc-healthy').textContent = `${healthy}/${activeServers.length}`;
   if (el('tfc-avg-latency')) el('tfc-avg-latency').textContent = `${Number(metrics?.latencyAvgMs || 0).toFixed(0)} ms`;
   if (el('tfc-active-conn')) el('tfc-active-conn').textContent = totalConn;
   if (el('tfc-error-rate')) el('tfc-error-rate').textContent = `${Number(metrics?.packetLossPct || 0).toFixed(2)}%`;
@@ -146,9 +147,10 @@ function updateTrafficStats(servers, metrics) {
 function updateServerRpsBars(servers) {
   const container = document.getElementById('tfc-server-bars');
   if (!container) return;
-  const maxRps = Math.max(...servers.map(s => Number(s.rps || 0)), 1);
+  const activeServers = servers.filter((server) => server.enabled !== false);
+  const maxRps = Math.max(...activeServers.map(s => Number(s.rps || 0)), 1);
 
-  container.innerHTML = servers.map(s => {
+  container.innerHTML = activeServers.map(s => {
     const rps = Number(s.rps || 0);
     const pct = Math.min(100, (rps / maxRps) * 100);
     const color = TFC_COLORS[s.id] || '#8fa3c0';

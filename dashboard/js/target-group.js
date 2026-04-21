@@ -39,12 +39,13 @@ function renderHealthBar(serverId) {
 
 /* ── Render summary badges ────────────────────────────────── */
 function renderTGSummary(servers) {
-  const total = servers.length;
-  const healthy = servers.filter(s => s.status === 'up' && s.enabled !== false).length;
+  const activeServers = servers.filter((server) => server.enabled !== false);
+  const total = activeServers.length;
+  const healthy = activeServers.filter(s => s.status === 'up').length;
   const unhealthy = total - healthy;
-  const totalReq = servers.reduce((a, s) => a + (s.requestCount || 0), 0);
-  const totalRps = servers.reduce((a, s) => a + (Number(s.rps) || 0), 0);
-  const totalConn = servers.reduce((a, s) => a + (s.activeConnections || 0), 0);
+  const totalReq = activeServers.reduce((a, s) => a + (s.requestCount || 0), 0);
+  const totalRps = activeServers.reduce((a, s) => a + (Number(s.rps) || 0), 0);
+  const totalConn = activeServers.reduce((a, s) => a + (s.activeConnections || 0), 0);
 
   document.getElementById('tg-healthy-count').textContent = healthy;
   document.getElementById('tg-unhealthy-count').textContent = unhealthy;
@@ -60,9 +61,16 @@ function renderTargetGroupTable(servers) {
   const tbody = document.getElementById('tg-table-body');
   if (!tbody) return;
 
-  servers.forEach(s => pushHealth(s.id, s.status === 'up' && s.enabled !== false));
+  const activeServers = servers.filter((server) => server.enabled !== false);
 
-  tbody.innerHTML = servers.map(s => {
+  if (activeServers.length === 0) {
+    tbody.innerHTML = `<tr><td colspan="5" style="text-align:center;padding:24px;color:var(--text-muted)">Chưa có target nào được register.</td></tr>`;
+    return;
+  }
+
+  activeServers.forEach(s => pushHealth(s.id, s.status === 'up' && s.enabled !== false));
+
+  tbody.innerHTML = activeServers.map(s => {
     const isEnabled = s.enabled !== false;
     const isHealthy = s.status === 'up' && isEnabled;
     const healthClass = !isEnabled ? 'tg-status-draining' : (isHealthy ? 'tg-status-healthy' : 'tg-status-unhealthy');
@@ -179,7 +187,7 @@ window.addEventListener('lb-stats', (e) => {
 
 /* ── Init skeleton ────────────────────────────────────────── */
 document.addEventListener('DOMContentLoaded', () => {
-  const skeleton = ['ec2-1', 'ec2-2', 'ec2-3'].map((id, i) => ({
+  const skeleton = ['ec2-1'].map((id, i) => ({
     id,
     name: `EC2-${i + 1}`,
     domain: `${id}.local`,

@@ -21,6 +21,7 @@ const {
 const { startHealthChecks } = require('./healthCheck');
 const { logRequest, logFailure, getRates, getRecentRequests, getLoadBalancingMetrics } = require('./logger');
 const { startWebSocketServer } = require('./wsServer');
+const { startAutoScalingLoop } = require('./autoScaling');
 
 // Cổng Load Balancer — lấy từ config, mặc định 3000 nếu không có
 const LB_PORT = config.loadBalancer.port || 3000;
@@ -221,3 +222,4 @@ server.listen(LB_PORT, '0.0.0.0', () => {
 
 startHealthChecks();      // Bắt đầu kiểm tra sức khỏe server mỗi 5 giây
 startWebSocketServer();   // Bắt đầu WebSocket server phát dữ liệu cho Dashboard
+startAutoScalingLoop();   // Mô phỏng Auto Scaling: tăng/giảm số EC2 đang tham gia pool

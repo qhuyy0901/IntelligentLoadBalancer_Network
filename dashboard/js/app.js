@@ -150,10 +150,20 @@ document.getElementById('btnAllDetails').addEventListener('click', () => {
 
 // ── Render Bảng Trạng Thái Server 
 function renderServerTable(servers) {
+  const activeServers = servers.filter((server) => server.enabled !== false);
   serverSnapshot = {};
-  servers.forEach(s => { serverSnapshot[s.id] = s; });
+  activeServers.forEach(s => { serverSnapshot[s.id] = s; });
 
-  serverTableBody.innerHTML = servers.map(s => {
+  if (activeServers.length === 0) {
+    serverTableBody.innerHTML = `
+      <tr>
+        <td colspan="4" style="text-align:center;padding:24px;color:var(--text-muted)">Chưa có EC2 nào tham gia Target Group. Hãy tạo traffic để Auto Scaling scale out.</td>
+      </tr>
+    `;
+    return;
+  }
+
+  serverTableBody.innerHTML = activeServers.map(s => {
     const isEnabled = s.enabled !== false;
     const isUp = s.status === 'up' && isEnabled;
     const color = COLORS[s.id] || '#fff';
@@ -199,7 +209,7 @@ function renderServerTable(servers) {
   }).join('');
 }
 
-function renderPerformanceMetrics(metrics = {}, algorithm = 'round-robin', servers = []) {
+function renderPerformanceMetrics(metrics = {}, algorithm = 'round-robin', servers = [], autoScaling = null) {
   const enabledServers = servers.filter((server) => server.enabled !== false);
   const healthyServers = enabledServers.filter((server) => server.status === 'up');
 
@@ -215,7 +225,9 @@ function renderPerformanceMetrics(metrics = {}, algorithm = 'round-robin', serve
   metricSuccessRateHintEl.textContent = `${formatMetricCount(metrics.totalAttempts || 0)} total attempts`;
   metricAlgorithmEl.textContent = formatAlgorithmName(algorithm);
   metricPoolHealthEl.textContent = `${healthyServers.length}/${enabledServers.length} healthy`;
-  metricModeHintEl.textContent = `${enabledServers.length} target members, ${algorithm || 'round-robin'} mode`;
+  metricModeHintEl.textContent = autoScaling
+    ? `${enabledServers.length}/${autoScaling.maxCapacity} EC2 active, ${algorithm || 'round-robin'} mode`
+    : `${enabledServers.length} target members, ${algorithm || 'round-robin'} mode`;
 
   const healthyCount = metrics.healthyServers || 0;
   const totalCount = metrics.totalServers || 0;
@@ -234,7 +246,12 @@ function renderPerformanceMetrics(metrics = {}, algorithm = 'round-robin', serve
   }
 
   alertIconEl.textContent = '✓';
-  alertTextEl.innerHTML = `Load balancer is <strong>running</strong> in ${formatAlgorithmName(algorithm)} mode with ${healthyCount}/${totalCount} healthy backends.`;
+    if (autoScaling) {
+      alertTextEl.innerHTML = `Auto Scaling is <strong>running</strong> with ${autoScaling.activeCapacity}/${autoScaling.maxCapacity} EC2 active. Load balancer is routing in ${formatAlgorithmName(algorithm)} mode.`;
+      return;
+    }
+
+    alertTextEl.innerHTML = `Load balancer is <strong>running</strong> in ${formatAlgorithmName(algorithm)} mode with ${healthyCount}/${totalCount} healthy backends.`;
 }
 
 // ── Render Bảng Lịch Sử Request 
@@ -317,11 +334,11 @@ window.addEventListener('lb-stats', (e) => {
   if (now - lastUpdateTime < 200) return;
   lastUpdateTime = now;
 
-  const { servers, recentRequests, metrics, algorithm } = e.detail;
+  const { servers, recentRequests, metrics, algorithm, autoScaling } = e.detail;
 
   renderServerTable(servers);          // Cập nhật bảng trạng thái server
   renderRequestsTable(recentRequests); // Cập nhật bảng lịch sử request
-  renderPerformanceMetrics(metrics, algorithm, servers);
+  renderPerformanceMetrics(metrics, algorithm, servers, autoScaling);
 
   if (window.updateChart) window.updateChart(servers); // Cập nhật biểu đồ
 
@@ -330,7 +347,7 @@ window.addEventListener('lb-stats', (e) => {
 
 // ── Hiển Thị Dữ Liệu Mặc Định Trước Khi Nhận Dữ Liệu WebSocket ───────────
 document.addEventListener('DOMContentLoaded', () => {
-  const skeleton = ['ec2-1', 'ec2-2', 'ec2-3'].map((id, i) => ({
+  const skeleton = ['ec2-1'].map((id, i) => ({
     id,
     name: `EC2-${i + 1}`,
     domain: `${id}.example.com`,
@@ -338,9 +355,10 @@ document.addEventListener('DOMContentLoaded', () => {
     status: 'up',
     requestCount: 0,
     activeConnections: 0,
-    rps: 0
+    rps: 0,
+    enabled: true
   }));
   renderServerTable(skeleton);
   renderRequestsTable([]);
-  renderPerformanceMetrics({ healthyServers: 3, totalServers: 3, successRatePct: 100, throughputRps: 0 }, 'round-robin', skeleton);
+  renderPerformanceMetrics({ healthyServers: 1, totalServers: 1, successRatePct: 100, throughputRps: 0 }, 'round-robin', skeleton, { activeCapacity: 1, maxCapacity: 3 });
 });

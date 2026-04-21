@@ -3,6 +3,7 @@ const WebSocket = require('ws');
 const config = require('../config/servers.json');
 const { getServerStates, getAlgorithm, getServersConfig } = require('./balancer');
 const { getRates, getRecentRequests, getLoadBalancingMetrics } = require('./logger');
+const { getAutoScalingState } = require('./autoScaling');
 
 let wss;
 
@@ -26,16 +27,18 @@ function startWebSocketServer() {
     const recentRequests = getRecentRequests(20); // 20 request mới nhất
     const metrics = getLoadBalancingMetrics();
     const enabledServers = getServersConfig();
+    const activeServerIds = new Set(enabledServers.filter((server) => server.enabled !== false).map((server) => server.id));
 
     // Đóng gói dữ liệu thành JSON để gửi
     const payload = JSON.stringify({
       type: 'stats',
       timestamp: new Date().toISOString(),
       algorithm: getAlgorithm(),
+      autoScaling: getAutoScalingState(),
       metrics: {
         ...metrics,
-        healthyServers: config.servers.filter(s => states[s.id]?.status === 'up' && s.enabled !== false).length,
-        totalServers: config.servers.filter(s => s.enabled !== false).length
+        healthyServers: config.servers.filter(s => states[s.id]?.status === 'up' && activeServerIds.has(s.id)).length,
+        totalServers: activeServerIds.size
       },
       servers: config.servers.map(s => ({
         id: s.id,
@@ -43,7 +46,7 @@ function startWebSocketServer() {
         domain: s.domain,
         color: s.color,
         port: s.port,
-        enabled: enabledServers.find(server => server.id === s.id)?.enabled !== false,
+        enabled: activeServerIds.has(s.id),
         status: states[s.id]?.status || 'unknown',          // Trạng thái: up / down
         requestCount: states[s.id]?.requestCount || 0,      // Tổng số request đã xử lý
         activeConnections: states[s.id]?.activeConnections || 0, // Kết nối đang xử lý
