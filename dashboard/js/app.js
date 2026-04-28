@@ -228,6 +228,7 @@ function renderServerTable(payload) {
 
 function renderPerformanceMetrics(payload) {
   const cloudWatch = payload.cloudWatch || {};
+  const metrics = payload.metrics || {};        // local LB fallback
   const targetGroup = payload.targetGroup || {};
   const asg = payload.autoScaling || {};
   const lb = payload.loadBalancer || {};
@@ -237,27 +238,30 @@ function renderPerformanceMetrics(payload) {
   // Show or hide the persistent AWS error card
   showAwsErrorCard(awsErrors);
 
-  // REQ/s — number only (label already shows unit)
-  metricThroughputEl.textContent = cloudWatch.requestRate == null
-    ? '—'
-    : Number(cloudWatch.requestRate).toFixed(2);
+  // REQ/s — CloudWatch first, fallback to local logger
+  const reqRate = cloudWatch.requestRate != null ? Number(cloudWatch.requestRate)
+    : (metrics.throughputRps != null ? Number(metrics.throughputRps) : null);
+  metricThroughputEl.textContent = reqRate != null ? reqRate.toFixed(2) : '—';
   metricThroughputEl.className = 'mb-value';
 
-  // LATENCY — compact "45ms"
-  metricAvgLatencyEl.textContent = cloudWatch.targetResponseTime == null
-    ? '—'
-    : `${(Number(cloudWatch.targetResponseTime) * 1000).toFixed(0)}ms`;
+  // LATENCY — CloudWatch first (targetResponseTime is in seconds → ms), fallback local
+  const latencyMs = cloudWatch.targetResponseTime != null
+    ? Number(cloudWatch.targetResponseTime) * 1000
+    : (metrics.latencyAvgMs != null ? Number(metrics.latencyAvgMs) : null);
+  metricAvgLatencyEl.textContent = latencyMs != null ? `${latencyMs.toFixed(0)}ms` : '—';
   metricAvgLatencyEl.className = 'mb-value';
 
-  // ERROR
-  const errRate = cloudWatch.errorRate == null ? null : Number(cloudWatch.errorRate);
-  metricPacketLossEl.textContent = errRate == null ? '—' : formatMetricPct(errRate);
+  // ERROR — CloudWatch first, fallback local
+  const errRate = cloudWatch.errorRate != null ? Number(cloudWatch.errorRate)
+    : (metrics.packetLossPct != null ? Number(metrics.packetLossPct) : null);
+  metricPacketLossEl.textContent = errRate != null ? formatMetricPct(errRate) : '—';
   metricPacketLossEl.className = 'mb-value' +
     (errRate == null ? '' : errRate > 5 ? ' error' : errRate > 0 ? ' warning' : '');
 
-  // SUCCESS
-  const successRate = errRate == null ? null : Math.max(0, 100 - errRate);
-  metricSuccessRateEl.textContent = successRate == null ? '—' : formatMetricPct(successRate);
+  // SUCCESS — derived from errRate
+  const successRate = errRate != null ? Math.max(0, 100 - errRate)
+    : (metrics.successRatePct != null ? Number(metrics.successRatePct) : null);
+  metricSuccessRateEl.textContent = successRate != null ? formatMetricPct(successRate) : '—';
   metricSuccessRateEl.className = 'mb-value' +
     (successRate == null ? '' : successRate >= 99 ? ' healthy' : successRate >= 95 ? ' warning' : ' error');
 
@@ -268,7 +272,7 @@ function renderPerformanceMetrics(payload) {
     (healthTotal === 0 ? '' : healthyCount === healthTotal ? ' healthy' : healthyCount === 0 ? ' error' : ' warning');
 
   // ALB — state
-  const albState = lb.state || (awsErrors.length ? null : 'active');
+  const albState = lb.state || null;
   metricAlgorithmEl.textContent = albState ? albState.toLowerCase() : '—';
   metricAlgorithmEl.className = 'mb-value' +
     (albState === 'active' ? ' healthy' : albState ? ' warning' : '');
