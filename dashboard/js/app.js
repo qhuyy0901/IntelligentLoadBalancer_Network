@@ -230,49 +230,54 @@ function renderPerformanceMetrics(payload) {
   const cloudWatch = payload.cloudWatch || {};
   const targetGroup = payload.targetGroup || {};
   const asg = payload.autoScaling || {};
+  const lb = payload.loadBalancer || {};
   const awsErrors = payload.awsErrors || [];
   const healthTotal = Number(targetGroup.healthyTargets || 0) + Number(targetGroup.unhealthyTargets || 0);
 
   // Show or hide the persistent AWS error card
   showAwsErrorCard(awsErrors);
 
+  // REQ/s — number only (label already shows unit)
   metricThroughputEl.textContent = cloudWatch.requestRate == null
-    ? (awsErrors.length ? '—' : 'No CloudWatch data yet')
-    : formatMetricRps(cloudWatch.requestRate);
-  metricThroughputHintEl.textContent = cloudWatch.requestCount == null
-    ? 'RequestCount metric not available yet'
-    : `${formatMetricCount(cloudWatch.requestCount)} requests / ${cloudWatch.periodSeconds || 60}s`;
+    ? '—'
+    : Number(cloudWatch.requestRate).toFixed(2);
+  metricThroughputEl.className = 'mb-value';
 
+  // LATENCY — compact "45ms"
   metricAvgLatencyEl.textContent = cloudWatch.targetResponseTime == null
-    ? (awsErrors.length ? '—' : 'No CloudWatch data yet')
-    : formatMetricMs(Number(cloudWatch.targetResponseTime) * 1000);
-  metricAvgLatencyHintEl.textContent = cloudWatch.targetResponseTime == null
-    ? 'TargetResponseTime pending'
-    : 'CloudWatch TargetResponseTime';
+    ? '—'
+    : `${(Number(cloudWatch.targetResponseTime) * 1000).toFixed(0)}ms`;
+  metricAvgLatencyEl.className = 'mb-value';
 
-  metricPacketLossEl.textContent = cloudWatch.errorRate == null
-    ? (awsErrors.length ? '—' : 'No CloudWatch data yet')
-    : formatMetricPct(cloudWatch.errorRate);
-  metricPacketLossHintEl.textContent = cloudWatch.errorRate == null
-    ? 'HTTPCode_Target_4XX/5XX no datapoint yet'
-    : `4XX: ${cloudWatch.httpCodeTarget4xx || 0} | 5XX: ${cloudWatch.httpCodeTarget5xx || 0}`;
+  // ERROR
+  const errRate = cloudWatch.errorRate == null ? null : Number(cloudWatch.errorRate);
+  metricPacketLossEl.textContent = errRate == null ? '—' : formatMetricPct(errRate);
+  metricPacketLossEl.className = 'mb-value' +
+    (errRate == null ? '' : errRate > 5 ? ' error' : errRate > 0 ? ' warning' : '');
 
-  const successRate = cloudWatch.errorRate == null ? null : Math.max(0, 100 - Number(cloudWatch.errorRate));
-  metricSuccessRateEl.textContent = successRate == null
-    ? (awsErrors.length ? '—' : 'No CloudWatch data yet')
-    : formatMetricPct(successRate);
-  metricSuccessRateHintEl.textContent = cloudWatch.httpCodeTarget2xx == null
-    ? 'HTTPCode_Target_2XX no datapoint yet'
-    : `2XX: ${cloudWatch.httpCodeTarget2xx}`;
+  // SUCCESS
+  const successRate = errRate == null ? null : Math.max(0, 100 - errRate);
+  metricSuccessRateEl.textContent = successRate == null ? '—' : formatMetricPct(successRate);
+  metricSuccessRateEl.className = 'mb-value' +
+    (successRate == null ? '' : successRate >= 99 ? ' healthy' : successRate >= 95 ? ' warning' : ' error');
 
-  metricAlgorithmEl.textContent = formatAlgorithmName('aws-alb');
-  metricPoolHealthEl.textContent = healthTotal > 0
-    ? `${targetGroup.healthyTargets || 0}/${healthTotal} healthy`
-    : 'No targets';
+  // TARGET — "2/3"
+  const healthyCount = Number(targetGroup.healthyTargets || 0);
+  metricPoolHealthEl.textContent = healthTotal > 0 ? `${healthyCount}/${healthTotal}` : '—';
+  metricPoolHealthEl.className = 'mb-value' +
+    (healthTotal === 0 ? '' : healthyCount === healthTotal ? ' healthy' : healthyCount === 0 ? ' error' : ' warning');
 
+  // ALB — state
+  const albState = lb.state || (awsErrors.length ? null : 'active');
+  metricAlgorithmEl.textContent = albState ? albState.toLowerCase() : '—';
+  metricAlgorithmEl.className = 'mb-value' +
+    (albState === 'active' ? ' healthy' : albState ? ' warning' : '');
+
+  // ASG — "current/desired/max"
   metricModeHintEl.textContent = asg.groupName
-    ? `ASG ${asg.groupName}: min ${asg.minSize ?? '-'} / desired ${asg.desiredCapacity ?? '-'} / max ${asg.maxSize ?? '-'} / current ${asg.currentInstances ?? 0}`
-    : 'ASG not configured (check AUTO_SCALING_GROUP_NAME in .env)';
+    ? `${asg.currentInstances ?? '—'}/${asg.desiredCapacity ?? '—'}/${asg.maxSize ?? '—'}`
+    : '—';
+  metricModeHintEl.className = 'mb-value';
 
   // Alert banner — only show if error card isn't already covering it
   if (awsErrors.length && isCredentialsError(awsErrors)) {
