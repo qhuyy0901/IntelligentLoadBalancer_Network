@@ -3,7 +3,6 @@ const LB_PORT = 8000;
 const LB_API_BASE = `http://${window.location.hostname}:${LB_PORT}`;
 const INSTANCE_COLORS = ['#2dd4bf', '#3b82f6', '#f59e0b', '#f43f5e', '#22c55e', '#8b5cf6', '#a855f7'];
 
-// ── Lưu tham chiếu các phần tử DOM ────────────────────────────────────────
 const serverTableBody = document.getElementById('serverTableBody');
 const requestsTableBody = document.getElementById('requestsTableBody');
 const lastUpdatedEl = document.getElementById('lastUpdated');
@@ -20,20 +19,19 @@ const metricSuccessRateHintEl = document.getElementById('metricSuccessRateHint')
 const metricAlgorithmEl = document.getElementById('metricAlgorithm');
 const metricPoolHealthEl = document.getElementById('metricPoolHealth');
 const metricModeHintEl = document.getElementById('metricModeHint');
+const awsErrorCardEl = document.getElementById('awsErrorCard');
+const awsErrorMsgEl = document.getElementById('awsErrorMsg');
 
-// ── Đóng banner thông báo 
 document.getElementById('alertClose').addEventListener('click', () => {
   document.getElementById('alertBanner').classList.add('hidden');
 });
 
-// ── Nút Refresh 
 ['refreshBtn', 'refreshBtn2'].forEach(id => {
   document.getElementById(id).addEventListener('click', () => {
     lastUpdatedEl.textContent = 'Đang làm mới...';
   });
 });
 
-// Nut tao traffic nhanh de kiem tra chart ngay tren dashboard
 const generateBtn = document.getElementById('btnGenerateTraffic');
 if (generateBtn) {
   generateBtn.addEventListener('click', async () => {
@@ -105,6 +103,7 @@ function openModal(serverId) {
     <div class="modal-stat"><span class="modal-stat-label">Private IP</span><span class="modal-stat-value">${s.privateIp || 'N/A'}</span></div>
     <div class="modal-stat"><span class="modal-stat-label">AZ</span><span class="modal-stat-value">${s.availabilityZone || 'N/A'}</span></div>
     <div class="modal-stat"><span class="modal-stat-label">Target Health</span><span class="modal-stat-value">${target?.healthState || 'unknown'}</span></div>
+    <div class="modal-stat"><span class="modal-stat-label">Health Reason</span><span class="modal-stat-value">${target?.healthReason || '—'}</span></div>
     <div class="modal-stat"><span class="modal-stat-label">Requests (60s)</span><span class="modal-stat-value">${traffic.requestCount || 0}</span></div>
     <div class="modal-stat"><span class="modal-stat-label">Req/s (60s)</span><span class="modal-stat-value">${Number(traffic.requestRate || 0).toFixed(2)}</span></div>
   `;
@@ -113,7 +112,6 @@ function openModal(serverId) {
 
 window.openModal = openModal;
 
-// Đóng modal khi nhấn nút X hoặc click ra ngoài
 document.getElementById('modalClose').addEventListener('click', () => {
   document.getElementById('modalOverlay').classList.add('hidden');
 });
@@ -127,10 +125,43 @@ document.getElementById('btnAllDetails').addEventListener('click', () => {
   if (first) openModal(first);
 });
 
+// ── AWS Error Card ─────────────────────────────────────────────────────────
+
+function isCredentialsError(errors = []) {
+  return errors.some(e =>
+    e.code === 'MISSING_AWS_CREDENTIALS' ||
+    /credential|token|auth|AccessDenied|UnauthorizedOperation/i.test(e.code + ' ' + e.message)
+  );
+}
+
+function showAwsErrorCard(errors = []) {
+  if (!awsErrorCardEl || !awsErrorMsgEl) return;
+  if (!errors.length) {
+    awsErrorCardEl.classList.add('hidden');
+    return;
+  }
+
+  const credErr = isCredentialsError(errors);
+  awsErrorCardEl.classList.remove('hidden');
+
+  if (credErr) {
+    awsErrorCardEl.querySelector('.aws-error-title').textContent = 'AWS credentials not configured';
+    awsErrorMsgEl.innerHTML =
+      'Attach an <strong>IAM Role</strong> with EC2/ELB/AutoScaling/CloudWatch read-only permissions to this EC2 instance, then restart the server. ' +
+      '<br>Or set <code>AWS_ACCESS_KEY_ID</code> / <code>AWS_SECRET_ACCESS_KEY</code> in <code>.env</code>.';
+  } else {
+    awsErrorCardEl.querySelector('.aws-error-title').textContent = 'AWS API error';
+    awsErrorMsgEl.textContent = errors.map(e => e.message).join(' | ');
+  }
+}
+
+// ── EC2 Table ──────────────────────────────────────────────────────────────
+
 function renderServerTable(payload) {
   const instances = payload.ec2Instances || [];
   const targetMap = new Map((payload.targetGroup?.registeredTargets || []).map((target) => [target.targetId, target]));
   const trafficMap = payload.traffic?.byInstance || {};
+  const hasCredError = isCredentialsError(payload.awsErrors || []);
 
   serverSnapshot = {};
   instances.forEach((instance) => {
@@ -138,9 +169,14 @@ function renderServerTable(payload) {
   });
 
   if (instances.length === 0) {
+    const msg = hasCredError
+      ? 'AWS credentials not configured — attach IAM Role to this EC2 instance'
+      : 'No EC2 instances found — check AUTO_SCALING_GROUP_NAME in .env';
     serverTableBody.innerHTML = `
       <tr>
-        <td colspan="4" style="text-align:center;padding:24px;color:var(--text-muted)">Loading AWS data...</td>
+        <td colspan="4" style="text-align:center;padding:24px;color:${hasCredError ? '#fca5a5' : 'var(--text-muted)'}">
+          ${hasCredError ? '⚠ ' : ''}${msg}
+        </td>
       </tr>
     `;
     return;
@@ -151,10 +187,9 @@ function renderServerTable(payload) {
     const traffic = trafficMap[instance.instanceId] || {};
     const color = getInstanceColor(instance.instanceId, index);
     const state = String(instance.state || 'unknown').toLowerCase();
-    const health = target?.healthState || 'unused';
+    const health = target?.healthState || 'not registered';
     const isHealthy = health === 'healthy';
     const statusClass = isHealthy ? 'status-up' : 'status-down';
-    const statusDot = isHealthy ? 'up' : 'down';
     const statusText = `${state} / ${health}`;
 
     return `
@@ -176,7 +211,7 @@ function renderServerTable(payload) {
         </td>
         <td>
           <div class="status-badge ${statusClass}">
-            <span class="status-dot ${statusDot}"></span>
+            <span class="status-dot ${isHealthy ? 'up' : 'down'}"></span>
             ${statusText}
           </div>
         </td>
@@ -195,29 +230,39 @@ function renderPerformanceMetrics(payload) {
   const cloudWatch = payload.cloudWatch || {};
   const targetGroup = payload.targetGroup || {};
   const asg = payload.autoScaling || {};
+  const awsErrors = payload.awsErrors || [];
   const healthTotal = Number(targetGroup.healthyTargets || 0) + Number(targetGroup.unhealthyTargets || 0);
 
-  metricThroughputEl.textContent = cloudWatch.requestRate == null ? 'No CloudWatch data yet' : formatMetricRps(cloudWatch.requestRate);
+  // Show or hide the persistent AWS error card
+  showAwsErrorCard(awsErrors);
+
+  metricThroughputEl.textContent = cloudWatch.requestRate == null
+    ? (awsErrors.length ? '—' : 'No CloudWatch data yet')
+    : formatMetricRps(cloudWatch.requestRate);
   metricThroughputHintEl.textContent = cloudWatch.requestCount == null
-    ? 'RequestCount metric is not available yet'
+    ? 'RequestCount metric not available yet'
     : `${formatMetricCount(cloudWatch.requestCount)} requests / ${cloudWatch.periodSeconds || 60}s`;
 
   metricAvgLatencyEl.textContent = cloudWatch.targetResponseTime == null
-    ? 'No CloudWatch data yet'
+    ? (awsErrors.length ? '—' : 'No CloudWatch data yet')
     : formatMetricMs(Number(cloudWatch.targetResponseTime) * 1000);
   metricAvgLatencyHintEl.textContent = cloudWatch.targetResponseTime == null
-    ? 'TargetResponseTime is pending'
+    ? 'TargetResponseTime pending'
     : 'CloudWatch TargetResponseTime';
 
-  metricPacketLossEl.textContent = cloudWatch.errorRate == null ? 'No CloudWatch data yet' : formatMetricPct(cloudWatch.errorRate);
+  metricPacketLossEl.textContent = cloudWatch.errorRate == null
+    ? (awsErrors.length ? '—' : 'No CloudWatch data yet')
+    : formatMetricPct(cloudWatch.errorRate);
   metricPacketLossHintEl.textContent = cloudWatch.errorRate == null
-    ? 'HTTPCode_Target_4XX/5XX has no datapoint yet'
+    ? 'HTTPCode_Target_4XX/5XX no datapoint yet'
     : `4XX: ${cloudWatch.httpCodeTarget4xx || 0} | 5XX: ${cloudWatch.httpCodeTarget5xx || 0}`;
 
   const successRate = cloudWatch.errorRate == null ? null : Math.max(0, 100 - Number(cloudWatch.errorRate));
-  metricSuccessRateEl.textContent = successRate == null ? 'No CloudWatch data yet' : formatMetricPct(successRate);
+  metricSuccessRateEl.textContent = successRate == null
+    ? (awsErrors.length ? '—' : 'No CloudWatch data yet')
+    : formatMetricPct(successRate);
   metricSuccessRateHintEl.textContent = cloudWatch.httpCodeTarget2xx == null
-    ? 'HTTPCode_Target_2XX has no datapoint yet'
+    ? 'HTTPCode_Target_2XX no datapoint yet'
     : `2XX: ${cloudWatch.httpCodeTarget2xx}`;
 
   metricAlgorithmEl.textContent = formatAlgorithmName('aws-alb');
@@ -227,28 +272,36 @@ function renderPerformanceMetrics(payload) {
 
   metricModeHintEl.textContent = asg.groupName
     ? `ASG ${asg.groupName}: min ${asg.minSize ?? '-'} / desired ${asg.desiredCapacity ?? '-'} / max ${asg.maxSize ?? '-'} / current ${asg.currentInstances ?? 0}`
-    : 'Auto Scaling group is not configured';
+    : 'ASG not configured (check AUTO_SCALING_GROUP_NAME in .env)';
 
-  if (payload.awsErrors?.length) {
+  // Alert banner — only show if error card isn't already covering it
+  if (awsErrors.length && isCredentialsError(awsErrors)) {
+    // Error card is visible — keep alert banner minimal
     alertIconEl.textContent = '!';
-    alertTextEl.innerHTML = `<strong>AWS integration error:</strong> ${payload.awsErrors[0].message}`;
+    alertTextEl.innerHTML = 'AWS credentials error — see red card above.';
+    return;
+  }
+
+  if (awsErrors.length) {
+    alertIconEl.textContent = '!';
+    alertTextEl.innerHTML = `<strong>AWS API error:</strong> ${awsErrors[0].message}`;
     return;
   }
 
   if (cloudWatch.noData) {
-    alertIconEl.textContent = '!';
-    alertTextEl.innerHTML = 'No CloudWatch data yet. Generate traffic through AWS ALB and wait 1-2 minutes.';
+    alertIconEl.textContent = 'ℹ';
+    alertTextEl.innerHTML = 'No CloudWatch data yet. Send traffic through AWS ALB and wait 1–2 minutes.';
     return;
   }
 
-  if ((targetGroup.healthyTargets || 0) === 0) {
+  if ((targetGroup.healthyTargets || 0) === 0 && healthTotal > 0) {
     alertIconEl.textContent = '!';
-    alertTextEl.innerHTML = 'Target Group currently has <strong>0 healthy targets</strong>. Dashboard is showing live AWS state.';
+    alertTextEl.innerHTML = `Target Group has <strong>0 healthy targets</strong> out of ${healthTotal} registered.`;
     return;
   }
 
   alertIconEl.textContent = '✓';
-  alertTextEl.innerHTML = `ALB is healthy with <strong>${targetGroup.healthyTargets}/${healthTotal}</strong> targets. Request rate: <strong>${cloudWatch.requestRate || 0} req/s</strong>.`;
+  alertTextEl.innerHTML = `ALB healthy — <strong>${targetGroup.healthyTargets || 0}/${healthTotal || '?'}</strong> targets up · <strong>${cloudWatch.requestRate ?? 0} req/s</strong>`;
 }
 
 function formatTime(iso) {
@@ -256,22 +309,17 @@ function formatTime(iso) {
   return d.toLocaleTimeString('vi-VN', { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' });
 }
 
-// Tạo chip hiển thị tên server đã xử lý
 function serverChip(serverId, serverName) {
   const cls = `chip-${serverId}`;
   return `<span class="server-chip ${cls}"><span class="chip-icon">⬡</span>${serverName}</span>`;
 }
 
-// Tạo chip nhỏ cho cột phân phối
 function distChip(serverId, serverName) {
   const color = getInstanceColor(serverId, 0);
   return `<span class="dist-chip"><span class="dist-line" style="background:${color}"></span>${serverName}</span>`;
 }
 
-// Lưu lịch sử IP — theo dõi server nào đã xử lý request từ IP đó
 const ipHistory = {};
-
-// Key = "clientIp-timestamp-serverId", tự động xóa sau 30 giây để không rò bộ nhớ
 const processedRequests = new Set();
 function addProcessedKey(key) {
   processedRequests.add(key);
@@ -280,11 +328,10 @@ function addProcessedKey(key) {
 
 function renderRequestsTable(requests) {
   if (!requests || requests.length === 0) {
-    requestsTableBody.innerHTML = `<tr><td colspan="4" style="color:var(--text-muted);text-align:center;padding:24px">No CloudWatch data yet or no requests were reported to LB logger.</td></tr>`;
+    requestsTableBody.innerHTML = `<tr><td colspan="4" style="color:var(--text-muted);text-align:center;padding:24px">No requests logged — traffic goes through custom LB on port 8000.</td></tr>`;
     return;
   }
 
-  // Lọc trùng: mỗi request chỉ được render 1 lần dựa theo key ip+time+server
   const uniqueRequests = [];
   requests.forEach(r => {
     const key = `${r.clientIp}-${r.time}-${r.serverId}`;
@@ -294,11 +341,10 @@ function renderRequestsTable(requests) {
     }
   });
 
-  if (uniqueRequests.length === 0) return; // Không có gì mới → không re-render
+  if (uniqueRequests.length === 0) return;
 
   requestsTableBody.innerHTML = uniqueRequests.slice(0, 10).map(r => {
     const ip = r.clientIp;
-    // Cập nhật lịch sử server đã xử lý request từ IP này
     if (!ipHistory[ip]) ipHistory[ip] = [];
     if (!ipHistory[ip].includes(r.serverId)) {
       ipHistory[ip].unshift(r.serverId);
@@ -322,8 +368,6 @@ let lastUpdateTime = 0;
 
 window.addEventListener('lb-stats', (e) => {
   const now = Date.now();
-
-  // Nếu event đến quá nhanh (< 200ms) → bỏ qua, tránh render 2 lần cùng lúc
   if (now - lastUpdateTime < 200) return;
   lastUpdateTime = now;
 
@@ -340,7 +384,7 @@ window.addEventListener('lb-stats', (e) => {
 });
 
 document.addEventListener('DOMContentLoaded', () => {
-  renderServerTable({ ec2Instances: [], targetGroup: { registeredTargets: [] }, traffic: { byInstance: {} } });
+  renderServerTable({ ec2Instances: [], targetGroup: { registeredTargets: [] }, traffic: { byInstance: {} }, awsErrors: [] });
   renderRequestsTable([]);
   renderPerformanceMetrics({
     cloudWatch: { noData: true },

@@ -1,122 +1,196 @@
-# Intelligent Load Balancer (AWS Realtime Dashboard)
+# Intelligent Load Balancer — AWS Realtime Dashboard
 
-Du an nay giu nguyen custom load balancer cu va bo sung dashboard lay du lieu that tu AWS.
+Custom load balancer + real-time dashboard pulling live data from AWS.
 
-Dashboard realtime lay du lieu tu:
-- EC2 Instances
-- Target Group
+Dashboard reads from:
+- EC2 Instances (in Auto Scaling Group)
+- Target Group (health state per target)
 - Application Load Balancer
-- Auto Scaling Group
-- CloudWatch metrics
+- Auto Scaling Group (min/desired/max/current)
+- CloudWatch metrics (RequestCount, TargetResponseTime, 2XX/4XX/5XX, HealthyHostCount)
 
-## 1) Cai package
+---
+
+## 1. Install dependencies
 
 ```bash
 npm install
 ```
 
-## 2) Cau hinh .env
+---
 
-Tao file `.env` o root project:
+## 2. Configure .env
 
-```env
-AWS_REGION=ap-southeast-2
-TARGET_GROUP_ARN=arn:aws:elasticloadbalancing:ap-southeast-2:123456789012:targetgroup/your-tg/xxxxxxxx
-LOAD_BALANCER_ARN=arn:aws:elasticloadbalancing:ap-southeast-2:123456789012:loadbalancer/app/your-alb/yyyyyyyy
-AUTO_SCALING_GROUP_NAME=lb-asg
-ALB_DNS=my-alb-123456789.ap-southeast-2.elb.amazonaws.com
-AWS_POLL_INTERVAL_MS=5000
-CLOUDWATCH_PERIOD_SECONDS=60
-CLOUDWATCH_LOOKBACK_MINUTES=10
-```
-
-Luu y:
-- Khong hard-code ARN trong code. He thong doc tu `.env`.
-- Ban phai co AWS credentials hop le (AWS CLI profile, access key hoac IAM role).
-
-## 3) Chay he thong
-
-Chay custom load balancer + dashboard:
+Copy `.env.example` to `.env` and fill in your real ARNs:
 
 ```bash
+cp .env.example .env
+```
+
+Open `.env` and set:
+
+| Variable | Where to find it |
+|---|---|
+| `TARGET_GROUP_ARN` | AWS Console → EC2 → Target Groups → your TG → Details tab |
+| `LOAD_BALANCER_ARN` | AWS Console → EC2 → Load Balancers → your ALB → Details tab |
+| `AUTO_SCALING_GROUP_NAME` | AWS Console → EC2 → Auto Scaling Groups |
+| `ALB_DNS` | AWS Console → EC2 → Load Balancers → DNS name column |
+
+**Important:** ARNs must start with `arn:aws:` — placeholder `...` values are detected and skipped.
+
+---
+
+## 3. Set up IAM Role for the dashboard EC2
+
+The EC2 instance running the dashboard needs read-only AWS permissions.
+
+### 3a. Create the IAM Role
+
+1. AWS Console → IAM → Roles → **Create role**
+2. Trusted entity: **EC2**
+3. Attach these managed policies:
+   - `AmazonEC2ReadOnlyAccess`
+   - `ElasticLoadBalancingReadOnly`
+   - `AutoScalingReadOnlyAccess`
+   - `CloudWatchReadOnlyAccess`
+4. Name the role: `lb-dashboard-readonly`
+
+### 3b. Attach the role to the dashboard EC2
+
+1. AWS Console → EC2 → Instances → select your dashboard EC2 (`3.107.233.161`)
+2. Actions → Security → **Modify IAM role**
+3. Select `lb-dashboard-readonly` → **Update IAM role**
+4. The change takes effect within ~30 seconds — no restart needed
+
+### 3c. Verify credentials on the EC2
+
+SSH into the instance and run:
+
+```bash
+aws sts get-caller-identity --region ap-southeast-2
+```
+
+If it returns your account/role info, credentials are working.
+
+---
+
+## 4. Run the server
+
+```bash
+# Custom LB + WebSocket server
+pm2 start lb-server/index.js --name lb
+
+# Dashboard (serve static files on port 4000)
+pm2 start serve --name dashboard -- ./dashboard -l 4000
+
+# Or without pm2:
 npm run aws
 ```
 
-Mac dinh:
-- Load balancer API: `http://localhost:8000`
-- WebSocket: `ws://localhost:9090`
-- Dashboard: `http://localhost:4000`
+Ports:
+| Service | Port |
+|---|---|
+| Custom Load Balancer API | 8000 |
+| WebSocket (real-time data) | 9090 |
+| Dashboard | 4000 |
 
-## 4) Test traffic qua AWS ALB
+---
 
-Thay `ALB-DNS` bang DNS that cua ALB:
+## 5. Fix inconsistent ALB backends
 
-```cmd
-for /L %i in (1,1,100) do curl http://ALB-DNS
+If the ALB returns different page styles on refresh (e.g. "Auto Scaling EC2 Backend" vs "EC2-2 Frontend Demo"), it means the target group has stale instances registered.
+
+### 5a. Find and deregister old targets
+
+```bash
+# List all targets in the target group
+aws elbv2 describe-target-health \
+  --target-group-arn <YOUR_TARGET_GROUP_ARN> \
+  --region ap-southeast-2
+
+# Deregister a stale instance (not in your ASG)
+aws elbv2 deregister-targets \
+  --target-group-arn <YOUR_TARGET_GROUP_ARN> \
+  --targets Id=i-0xxxxxxxxxxxx \
+  --region ap-southeast-2
 ```
 
-Vi du:
+### 5b. Ensure ASG instances use the correct app
 
-```cmd
-for /L %i in (1,1,100) do curl http://my-alb-123456789.ap-southeast-2.elb.amazonaws.com
+All EC2 instances in the ASG (`lb-asg`) should run `aws/asg-backend/server.js`.
+
+Add this User Data to the ASG Launch Template:
+
+```bash
+#!/bin/bash
+yum update -y
+curl -fsSL https://rpm.nodesource.com/setup_20.x | bash -
+yum install -y nodejs git
+cd /home/ec2-user
+git clone https://github.com/YOUR_USERNAME/IntelligentLoadBalancer.git app
+cd app
+npm install --production
+nohup node aws/asg-backend/server.js >> /var/log/asg-backend.log 2>&1 &
 ```
 
-## 5) Dashboard hien thi gi
+The updated `asg-backend/server.js` automatically reads real Instance ID, AZ, and IPs from the **EC2 Instance Metadata Service (IMDSv2)** — no env vars needed.
 
-Overview:
-- Request Count / Request Rate
-- Avg Latency (TargetResponseTime)
-- Error Rate (4XX/5XX)
-- Healthy/Unhealthy targets
-- EC2 state summary (running/pending/stopped)
-- ASG min/desired/max/current
+---
 
-Target Group tab:
-- Registered targets that
-- Health state tung target
-- Ly do unhealthy (neu co)
+## 6. Test ALB traffic
 
-Traffic tab:
-- RequestCount va req/s tu CloudWatch
-- Latency va error rate
-- Traffic distribution theo tung EC2 (dua tren request log nhan ve LB)
+```bash
+# Node.js script (shows per-instance distribution)
+node scripts/testAlbTraffic.js 100 10
 
-## 6) Xu ly loi da them
+# Windows CMD loop
+for /L %i in (1,1,100) do curl -s http://my-alb-2056764661.ap-southeast-2.elb.amazonaws.com/
 
-- Thieu AWS credentials:
-  - Dashboard hien thong bao loi ro rang.
-  - Backend khong crash.
-- CloudWatch chua co datapoint:
-  - Dashboard hien `No CloudWatch data yet`.
-  - Khong crash.
-- Target Group chua healthy:
-  - Dashboard van hien trang thai that (`healthy/unhealthy`) tu AWS.
-
-## 7) Files chinh da cap nhat
-
-- `aws/ec2.js`: Lay danh sach EC2 va state/IP/AZ.
-- `aws/elb.js`: Lay Target Group health va ALB info.
-- `aws/autoscaling.js`: Lay ASG min/desired/max/current + scaling activities.
-- `aws/cloudwatch.js`: Lay RequestCount, TargetResponseTime, 2XX/4XX/5XX, HealthyHostCount, UnHealthyHostCount.
-- `lb-server/wsServer.js`: Poll AWS moi 5s va broadcast payload realtime cho dashboard.
-- `dashboard/js/app.js`: Overview dung du lieu AWS that.
-- `dashboard/js/target-group.js`: Render registered targets that.
-- `dashboard/js/traffic.js`: Render CloudWatch traffic + distribution theo EC2.
-- `dashboard/js/chart-init.js`: Chart dong theo danh sach instance AWS.
-
-## 8) Payload WebSocket
-
-WebSocket gui payload dang:
-
-```json
-{
-  "ec2Instances": [],
-  "targetGroup": {},
-  "loadBalancer": {},
-  "autoScaling": {},
-  "cloudWatch": {},
-  "traffic": {}
-}
+# Linux/Mac
+for i in $(seq 1 100); do curl -s http://my-alb-2056764661.ap-southeast-2.elb.amazonaws.com/ > /dev/null; done
 ```
 
-Dashboard su dung payload nay de cap nhat realtime.
+After ~1–2 minutes, CloudWatch metrics will appear in the dashboard.
+
+---
+
+## 7. Dashboard overview
+
+**Overview tab:**
+- Request rate, avg latency, error rate, success rate (from CloudWatch)
+- EC2 instances table: instanceId, state, health, AZ
+- ASG: min / desired / max / current
+- Healthy/unhealthy target count
+
+**Target Group tab:**
+- Registered targets: instanceId, health state, port, health reason (if unhealthy)
+- Health history bar per target
+
+**Traffic tab:**
+- Request rate chart per EC2 (real-time, from local LB logs)
+- Traffic distribution bars
+- ALB access log (from local proxy)
+
+**Error states:**
+- AWS credentials not configured → red card with setup instructions
+- CloudWatch no data yet → informational message (not an error)
+- ARN not set in .env → clear "not configured" message per section
+
+---
+
+## 8. Key files
+
+| File | Purpose |
+|---|---|
+| `aws/ec2.js` | EC2 describe instances |
+| `aws/elb.js` | Target Group health + ALB info |
+| `aws/autoscaling.js` | ASG details and scaling activities |
+| `aws/cloudwatch.js` | CloudWatch metrics (10-min lookback) |
+| `aws/asg-backend/server.js` | EC2 backend app (uses IMDSv2 for real metadata) |
+| `lb-server/wsServer.js` | Polls AWS every 5s, broadcasts to dashboard |
+| `lb-server/index.js` | Custom HTTP load balancer proxy (port 8000) |
+| `dashboard/js/app.js` | Overview tab rendering |
+| `dashboard/js/target-group.js` | Target Group tab rendering |
+| `dashboard/js/traffic.js` | Traffic chart and log |
+| `scripts/testAlbTraffic.js` | ALB traffic generator + distribution report |
+| `.env.example` | Template for .env |

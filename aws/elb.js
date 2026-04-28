@@ -19,9 +19,17 @@ function getNameFromArn(arn = '', marker = '/') {
   return pieces.length > 1 ? pieces[1] || arn : arn;
 }
 
+// Reject placeholder values like '...', 'YOUR_ARN_HERE', etc.
+function isValidArn(arn) {
+  return typeof arn === 'string' && arn.startsWith('arn:aws:') && arn.length > 20;
+}
+
 async function getTargetGroupAndLoadBalancer(options = {}) {
-  const targetGroupArn = options.targetGroupArn || process.env.TARGET_GROUP_ARN;
-  const configuredLoadBalancerArn = options.loadBalancerArn || process.env.LOAD_BALANCER_ARN;
+  const rawTgArn = options.targetGroupArn || process.env.TARGET_GROUP_ARN;
+  const rawLbArn = options.loadBalancerArn || process.env.LOAD_BALANCER_ARN;
+  // Reject placeholder values so we don't fire invalid API calls
+  const targetGroupArn = isValidArn(rawTgArn) ? rawTgArn : null;
+  const configuredLoadBalancerArn = isValidArn(rawLbArn) ? rawLbArn : null;
 
   const targetGroup = {
     arn: targetGroupArn || null,

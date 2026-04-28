@@ -175,6 +175,37 @@ body {
 }
 
 
+/* AWS Credentials Error Card ─────────────────────────────────── */
+.aws-error-card {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  background: rgba(239, 68, 68, 0.12);
+  border: 1px solid rgba(239, 68, 68, 0.35);
+  border-radius: var(--radius-md);
+  padding: 14px 18px;
+  margin-bottom: 16px;
+}
+.aws-error-card.hidden { display: none; }
+.aws-error-icon {
+  font-size: 20px;
+  line-height: 1;
+  padding-top: 1px;
+  flex-shrink: 0;
+}
+.aws-error-title {
+  font-weight: 700;
+  font-size: 14px;
+  color: #fca5a5;
+  margin-bottom: 4px;
+}
+.aws-error-msg {
+  font-size: 13px;
+  color: #fda4a4;
+  opacity: 0.85;
+  line-height: 1.5;
+}
+
 .alert-banner {
   background: var(--alert-bg);
   border: 1px solid var(--alert-border);

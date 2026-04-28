@@ -42,6 +42,15 @@
 
     <div id="page-overview">
 
+      <!-- AWS Credentials / Config Error Banner (persistent, not closeable) -->
+      <div id="awsErrorCard" class="aws-error-card hidden">
+        <div class="aws-error-icon">⚠</div>
+        <div class="aws-error-body">
+          <div class="aws-error-title">AWS credentials not configured</div>
+          <div class="aws-error-msg" id="awsErrorMsg">Configure AWS credentials to load live data.</div>
+        </div>
+      </div>
+
       <!-- Status Banner -->
       <div class="alert-banner" id="alertBanner">
         <div class="alert-icon">✓</div>

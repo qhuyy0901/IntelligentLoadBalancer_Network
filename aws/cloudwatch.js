@@ -20,6 +20,11 @@ function toTargetGroupDimensionValue(targetGroupArn = '') {
   return index >= 0 ? targetGroupArn.slice(index + marker.length) : null;
 }
 
+// Reject placeholder values like '...', 'YOUR_ARN_HERE', etc.
+function isValidArn(arn) {
+  return typeof arn === 'string' && arn.startsWith('arn:aws:') && arn.length > 20;
+}
+
 function pickLatestValue(metricDataResult = {}) {
   const timestamps = metricDataResult?.Timestamps || [];
   const values = metricDataResult?.Values || [];
@@ -42,13 +47,16 @@ function round(value, digits = 2) {
 }
 
 async function getCloudWatchSnapshot(options = {}) {
-  const loadBalancerArn = options.loadBalancerArn || process.env.LOAD_BALANCER_ARN;
-  const targetGroupArn = options.targetGroupArn || process.env.TARGET_GROUP_ARN;
+  const rawLbArn = options.loadBalancerArn || process.env.LOAD_BALANCER_ARN;
+  const rawTgArn = options.targetGroupArn || process.env.TARGET_GROUP_ARN;
+  // Reject placeholder ARNs before calling AWS
+  const loadBalancerArn = isValidArn(rawLbArn) ? rawLbArn : null;
+  const targetGroupArn = isValidArn(rawTgArn) ? rawTgArn : null;
   const periodSeconds = Number(options.periodSeconds || process.env.CLOUDWATCH_PERIOD_SECONDS || 60);
   const lookbackMinutes = Number(options.lookbackMinutes || process.env.CLOUDWATCH_LOOKBACK_MINUTES || 10);
 
-  const lbDimensionValue = toLoadBalancerDimensionValue(loadBalancerArn);
-  const tgDimensionValue = toTargetGroupDimensionValue(targetGroupArn);
+  const lbDimensionValue = toLoadBalancerDimensionValue(loadBalancerArn || '');
+  const tgDimensionValue = toTargetGroupDimensionValue(targetGroupArn || '');
 
   if (!lbDimensionValue) {
     return {
@@ -63,7 +71,9 @@ async function getCloudWatchSnapshot(options = {}) {
       unHealthyHostCount: null,
       errorRate: null,
       noData: true,
-      message: 'LOAD_BALANCER_ARN is missing or invalid in .env'
+      message: loadBalancerArn
+        ? 'LOAD_BALANCER_ARN does not look like a valid ARN'
+        : 'LOAD_BALANCER_ARN is not set in .env'
     };
   }
 
