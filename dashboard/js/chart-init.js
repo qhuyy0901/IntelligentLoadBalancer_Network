@@ -1,90 +1,49 @@
-/**
- * ============================================================================
- *  CHART-INIT — Biểu Đồ Phân Phối Lưu Lượng Thời Gian Thực
- * ============================================================================
- *
- *  Biểu đồ đường (Line Chart) dùng Chart.js hiển thị số request/giây
- *  của từng EC2 server trong cửa sổ trượt 45 giây.
- *
- *  CƠ CHẾ:
- *  1. app.js gọi updateChart(servers) mỗi khi nhận dữ liệu từ WebSocket
- *  2. Tính delta = requestCount hiện tại - requestCount lần trước → req/s
- *  3. Đẩy delta vào hàng đợi 45 điểm, dịch biểu đồ sang trái
- *  4. Mỗi đường biểu diễn 1 server: EC2-1 (xanh lá), EC2-2 (xanh dương), EC2-3 (vàng)
- *
- *  Hàm updateChart() được export ra window.updateChart để app.js gọi
- * ============================================================================
- */
-
-const MAX_POINTS = 45; // Số điểm dữ liệu hiển thị trên biểu đồ (mỗi điểm ~1 giây)
-
-// Nhãn trục X: từ -45s đến Now
+const MAX_POINTS = 45;
 const labels = Array.from({ length: MAX_POINTS }, (_, i) => `-${MAX_POINTS - i} s`);
 labels[MAX_POINTS - 1] = 'Now';
 
-// Màu sắc tương ứng với từng EC2 server
-const DATA_COLORS = {
-  'ec2-1': '#2dd4bf',
-  'ec2-2': '#3b82f6',
-  'ec2-3': '#f59e0b'
+const DATA_COLORS = ['#2dd4bf', '#3b82f6', '#f59e0b', '#f43f5e', '#22c55e', '#8b5cf6'];
+
+const dataQueues = {};
+const trafficChartState = {
+  chart: null,
+  datasetOrder: []
 };
 
-// Hàng đợi dữ liệu cho từng server — khởi tạo toàn 0
-const dataQueues = {
-  'ec2-1': new Array(MAX_POINTS).fill(0),
-  'ec2-2': new Array(MAX_POINTS).fill(0),
-  'ec2-3': new Array(MAX_POINTS).fill(0)
-};
+function getColor(index) {
+  return DATA_COLORS[index % DATA_COLORS.length];
+}
 
-const previousRequestCounts = {
-  'ec2-1': null,
-  'ec2-2': null,
-  'ec2-3': null
-};
+function ensureQueue(instanceId) {
+  if (!dataQueues[instanceId]) dataQueues[instanceId] = new Array(MAX_POINTS).fill(0);
+  return dataQueues[instanceId];
+}
 
-let trafficChart;
+function buildDataset(instanceId, index) {
+  return {
+    id: instanceId,
+    label: instanceId,
+    data: [...ensureQueue(instanceId)],
+    borderColor: getColor(index),
+    backgroundColor: `${getColor(index)}18`,
+    borderWidth: 2.5,
+    pointRadius: 0,
+    pointHoverRadius: 4,
+    tension: 0.4,
+    fill: true
+  };
+}
 
 function initChart() {
-  const ctx = document.getElementById('trafficChart').getContext('2d');
-  trafficChart = new Chart(ctx, {
+  const canvas = document.getElementById('trafficChart');
+  if (!canvas || trafficChartState.chart) return;
+
+  const ctx = canvas.getContext('2d');
+  trafficChartState.chart = new Chart(ctx, {
     type: 'line',
     data: {
       labels: [...labels],
-      datasets: [
-        {
-          label: 'EC2-1',
-          data: [...dataQueues['ec2-1']],
-          borderColor: DATA_COLORS['ec2-1'],
-          backgroundColor: DATA_COLORS['ec2-1'] + '18',
-          borderWidth: 2.5,
-          pointRadius: 0,           // Ẩn điểm tròn để biểu đồ gọn hơn
-          pointHoverRadius: 4,      // Hiện khi di chuột
-          tension: 0.4,             // Đường cong mượt
-          fill: true
-        },
-        {
-          label: 'EC2-2',
-          data: [...dataQueues['ec2-2']],
-          borderColor: DATA_COLORS['ec2-2'],
-          backgroundColor: DATA_COLORS['ec2-2'] + '18',
-          borderWidth: 2.5,
-          pointRadius: 0,
-          pointHoverRadius: 4,
-          tension: 0.4,
-          fill: true
-        },
-        {
-          label: 'EC2-3',
-          data: [...dataQueues['ec2-3']],
-          borderColor: DATA_COLORS['ec2-3'],
-          backgroundColor: DATA_COLORS['ec2-3'] + '18',
-          borderWidth: 2.5,
-          pointRadius: 0,
-          pointHoverRadius: 4,
-          tension: 0.4,
-          fill: true
-        }
-      ]
+      datasets: []
     },
     options: {
       responsive: true,
@@ -111,8 +70,7 @@ function initChart() {
           titleColor: '#e8edf5',
           bodyColor: '#8fa3c0',
           callbacks: {
-            // Hien thi so request moi trong moi giay
-            label: ctx => ` ${ctx.dataset.label}: ${ctx.parsed.y} req/s`
+            label: (context) => ` ${context.dataset.label}: ${context.parsed.y} req/s`
           }
         }
       },
@@ -124,12 +82,12 @@ function initChart() {
         },
         y: {
           min: 0,
-          suggestedMax: 5,   // Mức tối thiểu nếu không có traffic; tự scale lên khi có nhiều request
+          suggestedMax: 5,
           ticks: {
             color: '#5a78a0',
             font: { size: 11 },
-            precision: 0,    // Chỉ hiện số nguyên
-            callback: v => v
+            precision: 0,
+            callback: (value) => value
           },
           title: {
             display: true,
@@ -145,44 +103,47 @@ function initChart() {
   });
 }
 
-/**
- * Đẩy số request moi theo tung giay vao hang doi va dich bieu do ve ben trai
- * Được gọi bởi app.js mỗi khi nhận dữ liệu từ WebSocket
- */
-function updateChart(servers) {
-  if (!trafficChart) return;
+function ensureDatasets(instanceIds) {
+  const chart = trafficChartState.chart;
+  if (!chart) return;
 
-  // Tra cứu index dataset theo server id — tránh lỗi nếu thứ tự thay đổi
-  const idToDataset = { 'ec2-1': 0, 'ec2-2': 1, 'ec2-3': 2 };
+  const nextOrder = [...instanceIds].sort();
+  const changed =
+    nextOrder.length !== trafficChartState.datasetOrder.length ||
+    nextOrder.some((id, idx) => id !== trafficChartState.datasetOrder[idx]);
 
-  servers.forEach(s => {
-    const idx = idToDataset[s.id];
-    if (idx === undefined) return; // Bỏ qua server không nhận ra
-    const queue = dataQueues[s.id];
-    if (!queue) return;
+  if (!changed) return;
 
-    const currentCount = Number(s.requestCount || 0);
-    const previousCount = previousRequestCounts[s.id];
-    let reqPerSecond = 0;
-    if (previousCount != null) {
-      reqPerSecond = Math.max(0, currentCount - previousCount);
-    }
-    previousRequestCounts[s.id] = currentCount;
-
-    queue.push(reqPerSecond);                               // Them diem moi
-    if (queue.length > MAX_POINTS) queue.shift();           // Xóa điểm cũ nhất
-    trafficChart.data.datasets[idx].data = [...queue];      // Cập nhật dataset
-  });
-  trafficChart.update('none'); // Cập nhật không có animation để mượt
+  trafficChartState.datasetOrder = nextOrder;
+  chart.data.datasets = nextOrder.map((instanceId, index) => buildDataset(instanceId, index));
 }
 
-// Khởi tạo biểu đồ khi DOM đã sẵn sàng
-document.addEventListener('DOMContentLoaded', initChart);
-window.updateChart = updateChart; // Expose ra global để app.js gọi được
+function updateChart(ec2Instances = [], traffic = {}) {
+  const chart = trafficChartState.chart;
+  if (!chart) return;
 
-// Update chart theme colors when toggling light/dark
+  const ids = ec2Instances.map((instance) => instance.instanceId).filter(Boolean);
+  ensureDatasets(ids);
+
+  trafficChartState.datasetOrder.forEach((instanceId, index) => {
+    const queue = ensureQueue(instanceId);
+    const rate = Number(traffic?.byInstance?.[instanceId]?.requestRate || 0);
+    queue.push(rate);
+    if (queue.length > MAX_POINTS) queue.shift();
+
+    if (chart.data.datasets[index]) {
+      chart.data.datasets[index].data = [...queue];
+      chart.data.datasets[index].label = instanceId;
+    }
+  });
+
+  chart.update('none');
+}
+
 function updateChartTheme() {
-  if (!trafficChart) return;
+  const chart = trafficChartState.chart;
+  if (!chart) return;
+
   const style = getComputedStyle(document.documentElement);
   const gridColor = style.getPropertyValue('--chart-grid').trim() || 'rgba(255,255,255,0.04)';
   const borderColor = style.getPropertyValue('--chart-border').trim() || 'rgba(255,255,255,0.06)';
@@ -192,18 +153,21 @@ function updateChartTheme() {
   const textPrimary = style.getPropertyValue('--text-primary').trim() || '#e8edf5';
   const textSecondary = style.getPropertyValue('--text-secondary').trim() || '#8fa3c0';
 
-  trafficChart.options.scales.x.ticks.color = tickColor;
-  trafficChart.options.scales.x.grid.color = gridColor;
-  trafficChart.options.scales.x.border.color = borderColor;
-  trafficChart.options.scales.y.ticks.color = tickColor;
-  trafficChart.options.scales.y.grid.color = gridColor;
-  trafficChart.options.scales.y.border.color = borderColor;
-  trafficChart.options.scales.y.title.color = tickColor;
-  trafficChart.options.plugins.legend.labels.color = textSecondary;
-  trafficChart.options.plugins.tooltip.backgroundColor = tooltipBg;
-  trafficChart.options.plugins.tooltip.borderColor = tooltipBorder;
-  trafficChart.options.plugins.tooltip.titleColor = textPrimary;
-  trafficChart.options.plugins.tooltip.bodyColor = textSecondary;
-  trafficChart.update();
+  chart.options.scales.x.ticks.color = tickColor;
+  chart.options.scales.x.grid.color = gridColor;
+  chart.options.scales.x.border.color = borderColor;
+  chart.options.scales.y.ticks.color = tickColor;
+  chart.options.scales.y.grid.color = gridColor;
+  chart.options.scales.y.border.color = borderColor;
+  chart.options.scales.y.title.color = tickColor;
+  chart.options.plugins.legend.labels.color = textSecondary;
+  chart.options.plugins.tooltip.backgroundColor = tooltipBg;
+  chart.options.plugins.tooltip.borderColor = tooltipBorder;
+  chart.options.plugins.tooltip.titleColor = textPrimary;
+  chart.options.plugins.tooltip.bodyColor = textSecondary;
+  chart.update();
 }
+
+document.addEventListener('DOMContentLoaded', initChart);
+window.updateChart = updateChart;
 window._updateChartTheme = updateChartTheme;

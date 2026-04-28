@@ -1,65 +1,37 @@
-/**
- * ============================================================================
- *  TRAFFIC — Trang Giám Sát Traffic Thời Gian Thực (Kiểu AWS ALB)
- * ============================================================================
- *
- *  Trang này hiển thị chi tiết traffic đi qua Load Balancer:
- *  - Biểu đồ RPS realtime theo từng server (cửa sổ 60 giây)
- *  - Bảng log request với filter theo server
- *  - Thống kê: tổng RPS, tổng request, server khỏe, latency, connections, error rate
- *  - Thanh RPS mini cho từng server
- *  - Nút tạo traffic test (20 request liên tiếp)
- *
- *  NGUỒN DỮ LIỆU: Lắng nghe sự kiện 'lb-stats' từ ws.js
- * ============================================================================
- */
+const TFC_MAX_POINTS = 60;
+const TFC_LABELS = Array.from({ length: TFC_MAX_POINTS }, (_, index) => `-${TFC_MAX_POINTS - index}s`);
+TFC_LABELS[TFC_MAX_POINTS - 1] = 'Now';
 
-const LB_BASE_TRAFFIC = `http://${window.location.hostname}:8000`;
-
-/* ── Traffic log store ────────────────────────────────────── */
-const MAX_TRAFFIC_LOGS = 200;
-const trafficLogs = []; // [ { time, clientIp, serverId, serverName, duration } ]
-
-/* ── Traffic chart (per-server RPS timeline) ──────────────── */
-const TFC_MAX_PTS = 60;
-const tfcLabels = Array.from({ length: TFC_MAX_PTS }, (_, i) => `-${TFC_MAX_PTS - i}s`);
-tfcLabels[TFC_MAX_PTS - 1] = 'Now';
-
-const TFC_COLORS = {
-  'ec2-1': '#2dd4bf',
-  'ec2-2': '#3b82f6',
-  'ec2-3': '#f59e0b'
+const TFC_COLORS = ['#2dd4bf', '#3b82f6', '#f59e0b', '#f43f5e', '#22c55e', '#8b5cf6'];
+const tfcState = {
+  chart: null,
+  queues: {},
+  order: [],
+  logs: [],
+  filter: 'all',
+  seenKeys: new Set()
 };
 
-const tfcQueues = {
-  'ec2-1': new Array(TFC_MAX_PTS).fill(0),
-  'ec2-2': new Array(TFC_MAX_PTS).fill(0),
-  'ec2-3': new Array(TFC_MAX_PTS).fill(0)
-};
+const MAX_LOGS = 250;
 
-const tfcPrevCounts = { 'ec2-1': null, 'ec2-2': null, 'ec2-3': null };
+function getColor(index) {
+  return TFC_COLORS[index % TFC_COLORS.length];
+}
 
-let tfcChart = null;
+function ensureQueue(instanceId) {
+  if (!tfcState.queues[instanceId]) tfcState.queues[instanceId] = new Array(TFC_MAX_POINTS).fill(0);
+  return tfcState.queues[instanceId];
+}
 
 function initTrafficChart() {
   const canvas = document.getElementById('tfc-chart');
-  if (!canvas || tfcChart) return;
+  if (!canvas || tfcState.chart) return;
 
-  tfcChart = new Chart(canvas.getContext('2d'), {
+  tfcState.chart = new Chart(canvas.getContext('2d'), {
     type: 'line',
     data: {
-      labels: [...tfcLabels],
-      datasets: ['ec2-1', 'ec2-2', 'ec2-3'].map(id => ({
-        label: id.toUpperCase(),
-        data: [...tfcQueues[id]],
-        borderColor: TFC_COLORS[id],
-        backgroundColor: TFC_COLORS[id] + '20',
-        borderWidth: 2.5,
-        pointRadius: 0,
-        pointHoverRadius: 5,
-        tension: 0.45,
-        fill: true
-      }))
+      labels: [...TFC_LABELS],
+      datasets: []
     },
     options: {
       responsive: true,
@@ -86,7 +58,7 @@ function initTrafficChart() {
           titleColor: '#e8edf5',
           bodyColor: '#8fa3c0',
           callbacks: {
-            label: ctx => ` ${ctx.dataset.label}: ${ctx.parsed.y} req/s`
+            label: (context) => ` ${context.dataset.label}: ${context.parsed.y} req/s`
           }
         }
       },
@@ -109,218 +81,229 @@ function initTrafficChart() {
   });
 }
 
-function updateTrafficChart(servers) {
-  if (!tfcChart) return;
-  const idToIdx = { 'ec2-1': 0, 'ec2-2': 1, 'ec2-3': 2 };
-  servers.forEach(s => {
-    const idx = idToIdx[s.id];
-    if (idx === undefined) return;
-    const curr = Number(s.requestCount || 0);
-    const prev = tfcPrevCounts[s.id];
-    const delta = (prev != null) ? Math.max(0, curr - prev) : 0;
-    tfcPrevCounts[s.id] = curr;
-    tfcQueues[s.id].push(delta);
-    if (tfcQueues[s.id].length > TFC_MAX_PTS) tfcQueues[s.id].shift();
-    tfcChart.data.datasets[idx].data = [...tfcQueues[s.id]];
+function ensureDatasets(instanceIds) {
+  const chart = tfcState.chart;
+  if (!chart) return;
+
+  const nextOrder = [...instanceIds].sort();
+  const changed =
+    nextOrder.length !== tfcState.order.length ||
+    nextOrder.some((id, index) => id !== tfcState.order[index]);
+
+  if (!changed) return;
+  tfcState.order = nextOrder;
+
+  chart.data.datasets = nextOrder.map((instanceId, index) => ({
+    label: instanceId,
+    data: [...ensureQueue(instanceId)],
+    borderColor: getColor(index),
+    backgroundColor: `${getColor(index)}20`,
+    borderWidth: 2.5,
+    pointRadius: 0,
+    pointHoverRadius: 5,
+    tension: 0.45,
+    fill: true
+  }));
+
+  renderTrafficFilterButtons(nextOrder);
+}
+
+function updateTrafficChart(payload) {
+  const chart = tfcState.chart;
+  if (!chart) return;
+
+  const ids = (payload.ec2Instances || []).map((instance) => instance.instanceId).filter(Boolean);
+  ensureDatasets(ids);
+
+  tfcState.order.forEach((instanceId, index) => {
+    const queue = ensureQueue(instanceId);
+    const rps = Number(payload.traffic?.byInstance?.[instanceId]?.requestRate || 0);
+    queue.push(rps);
+    if (queue.length > TFC_MAX_POINTS) queue.shift();
+
+    if (chart.data.datasets[index]) {
+      chart.data.datasets[index].data = [...queue];
+      chart.data.datasets[index].label = instanceId;
+    }
   });
-  tfcChart.update('none');
+
+  chart.update('none');
 }
 
-/* ── Traffic Stat Cards ───────────────────────────────────── */
-function updateTrafficStats(servers, metrics) {
-  const activeServers = servers.filter((server) => server.enabled !== false);
-  const totalRps = activeServers.reduce((a, s) => a + Number(s.rps || 0), 0);
-  const totalReq = activeServers.reduce((a, s) => a + (s.requestCount || 0), 0);
-  const healthy = activeServers.filter(s => s.status === 'up').length;
-  const totalConn = activeServers.reduce((a, s) => a + (s.activeConnections || 0), 0);
+function updateTrafficStats(payload) {
+  const cloudWatch = payload.cloudWatch || {};
+  const targetGroup = payload.targetGroup || {};
 
-  const el = id => document.getElementById(id);
-  if (el('tfc-total-rps')) el('tfc-total-rps').textContent = totalRps.toFixed(2);
-  if (el('tfc-total-req')) el('tfc-total-req').textContent = totalReq.toLocaleString();
-  if (el('tfc-healthy')) el('tfc-healthy').textContent = `${healthy}/${activeServers.length}`;
-  if (el('tfc-avg-latency')) el('tfc-avg-latency').textContent = `${Number(metrics?.latencyAvgMs || 0).toFixed(0)} ms`;
-  if (el('tfc-active-conn')) el('tfc-active-conn').textContent = totalConn;
-  if (el('tfc-error-rate')) el('tfc-error-rate').textContent = `${Number(metrics?.packetLossPct || 0).toFixed(2)}%`;
+  const throughput = cloudWatch.requestRate;
+  const totalRequest = cloudWatch.requestCount;
+  const healthy = Number(targetGroup.healthyTargets || 0);
+  const unhealthy = Number(targetGroup.unhealthyTargets || 0);
+  const totalTargets = healthy + unhealthy;
+
+  document.getElementById('tfc-total-rps').textContent = throughput == null ? 'No data' : Number(throughput).toFixed(2);
+  document.getElementById('tfc-total-req').textContent = totalRequest == null ? 'No data' : Number(totalRequest).toLocaleString();
+  document.getElementById('tfc-healthy').textContent = totalTargets ? `${healthy}/${totalTargets}` : 'No targets';
+  document.getElementById('tfc-avg-latency').textContent = cloudWatch.targetResponseTime == null
+    ? 'No data'
+    : `${(Number(cloudWatch.targetResponseTime) * 1000).toFixed(2)} ms`;
+  document.getElementById('tfc-active-conn').textContent = '-';
+  document.getElementById('tfc-error-rate').textContent = cloudWatch.errorRate == null
+    ? 'No data'
+    : `${Number(cloudWatch.errorRate).toFixed(2)}%`;
 }
 
-/* ── Per-server mini RPS bars ─────────────────────────────── */
-function updateServerRpsBars(servers) {
+function updateServerBars(payload) {
   const container = document.getElementById('tfc-server-bars');
   if (!container) return;
-  const activeServers = servers.filter((server) => server.enabled !== false);
-  const maxRps = Math.max(...activeServers.map(s => Number(s.rps || 0)), 1);
 
-  container.innerHTML = activeServers.map(s => {
-    const rps = Number(s.rps || 0);
-    const pct = Math.min(100, (rps / maxRps) * 100);
-    const color = TFC_COLORS[s.id] || '#8fa3c0';
-    const isUp = s.status === 'up' && s.enabled !== false;
-    return `
+  const entries = tfcState.order.map((instanceId) => ({
+    instanceId,
+    requestCount: Number(payload.traffic?.byInstance?.[instanceId]?.requestCount || 0),
+    requestRate: Number(payload.traffic?.byInstance?.[instanceId]?.requestRate || 0),
+    state: payload.ec2Instances?.find((item) => item.instanceId === instanceId)?.state || 'unknown'
+  }));
+
+  if (!entries.length) {
+    container.innerHTML = `<div class="tfc-empty">Loading AWS data...</div>`;
+    return;
+  }
+
+  const maxRps = Math.max(...entries.map((entry) => entry.requestRate), 1);
+  container.innerHTML = entries
+    .map((entry, index) => {
+      const pct = Math.min(100, (entry.requestRate / maxRps) * 100);
+      const color = getColor(index);
+      const up = entry.state === 'running';
+
+      return `
       <div class="tfc-server-bar-row">
         <div class="tfc-server-bar-label">
           <span class="tfc-server-dot" style="background:${color}"></span>
-          <span>${s.name}</span>
-          <span class="tfc-server-status ${isUp ? 'tfc-up' : 'tfc-down'}">${isUp ? 'UP' : 'DOWN'}</span>
+          <span>${entry.instanceId}</span>
+          <span class="tfc-server-status ${up ? 'tfc-up' : 'tfc-down'}">${entry.state}</span>
         </div>
         <div class="tfc-bar-track">
           <div class="tfc-bar-fill" style="width:${pct}%;background:${color}"></div>
         </div>
-        <div class="tfc-server-bar-meta">${rps.toFixed(1)} req/s · ${(s.requestCount||0).toLocaleString()} total</div>
-      </div>
-    `;
-  }).join('');
+        <div class="tfc-server-bar-meta">${entry.requestRate.toFixed(2)} req/s · ${entry.requestCount.toLocaleString()} req</div>
+      </div>`;
+    })
+    .join('');
 }
 
-/* ── Traffic Log Table ────────────────────────────────────── */
-let trafficFilter = 'all';
-const seenTrafficKeys = new Set();
+function addTrafficLogs(payload) {
+  const requests = payload.recentRequests || [];
+  requests.forEach((request) => {
+    const key = `${request.clientIp}-${request.time}-${request.serverId}`;
+    if (tfcState.seenKeys.has(key)) return;
+    tfcState.seenKeys.add(key);
+    setTimeout(() => tfcState.seenKeys.delete(key), 60000);
 
-function addTrafficLog(recentRequests) {
-  recentRequests.forEach(r => {
-    const key = `${r.clientIp}-${r.time}-${r.serverId}`;
-    if (!seenTrafficKeys.has(key)) {
-      seenTrafficKeys.add(key);
-      setTimeout(() => seenTrafficKeys.delete(key), 60000);
-      trafficLogs.unshift({
-        time: r.time,
-        clientIp: r.clientIp,
-        serverId: r.serverId,
-        serverName: r.serverName,
-        duration: r.duration
-      });
-    }
+    tfcState.logs.unshift({
+      time: request.time,
+      clientIp: request.clientIp,
+      serverId: request.serverId,
+      serverName: request.serverName,
+      duration: request.duration
+    });
   });
-  if (trafficLogs.length > MAX_TRAFFIC_LOGS) trafficLogs.splice(MAX_TRAFFIC_LOGS);
-  renderTrafficLogTable();
 
-  // Update log count display
-  const countEl = document.getElementById('tfc-log-count');
-  if (countEl) countEl.textContent = `Log records: ${trafficLogs.length}`;
+  if (tfcState.logs.length > MAX_LOGS) tfcState.logs.splice(MAX_LOGS);
+  renderTrafficLogTable();
 }
 
 function renderTrafficLogTable() {
   const tbody = document.getElementById('tfc-log-body');
   if (!tbody) return;
 
-  const filtered = trafficFilter === 'all'
-    ? trafficLogs
-    : trafficLogs.filter(r => r.serverId === trafficFilter);
+  const logs = tfcState.filter === 'all'
+    ? tfcState.logs
+    : tfcState.logs.filter((row) => row.serverId === tfcState.filter);
 
-  if (filtered.length === 0) {
-    tbody.innerHTML = `<tr><td colspan="5" class="tfc-empty">Chưa có traffic — hãy gửi request đến ${LB_BASE_TRAFFIC}</td></tr>`;
+  if (!logs.length) {
+    tbody.innerHTML = `<tr><td colspan="5" class="tfc-empty">No CloudWatch data yet</td></tr>`;
+    document.getElementById('tfc-log-count').textContent = 'Log records: 0';
     return;
   }
 
-  tbody.innerHTML = filtered.slice(0, 50).map(r => {
-    const color = TFC_COLORS[r.serverId] || '#8fa3c0';
-    const dur = Number(r.duration || 0);
-    const durColor = dur < 50 ? '#22c55e' : dur < 200 ? '#f59e0b' : '#ef4444';
-    const t = new Date(r.time);
-    const timeStr = isNaN(t) ? '—' : t.toLocaleTimeString('vi-VN', { hour12: false });
+  tbody.innerHTML = logs.slice(0, 50).map((row) => {
+    const time = new Date(row.time);
+    const timeText = Number.isFinite(time.getTime()) ? time.toLocaleTimeString('vi-VN', { hour12: false }) : '-';
+    const duration = Number(row.duration || 0);
+
     return `
       <tr class="tfc-log-row">
-        <td class="tfc-log-cell tfc-time">${timeStr}</td>
-        <td class="tfc-log-cell tfc-ip">${r.clientIp || '—'}</td>
-        <td class="tfc-log-cell">
-          <span class="tfc-chip" style="background:${color}20;border-color:${color}44;color:${color}">
-            ${r.serverName || r.serverId}
-          </span>
-        </td>
-        <td class="tfc-log-cell" style="color:${durColor};font-variant-numeric:tabular-nums">${dur} ms</td>
+        <td class="tfc-log-cell tfc-time">${timeText}</td>
+        <td class="tfc-log-cell tfc-ip">${row.clientIp || '-'}</td>
+        <td class="tfc-log-cell"><span class="tfc-chip">${row.serverName || row.serverId || '-'}</span></td>
+        <td class="tfc-log-cell">${duration} ms</td>
         <td class="tfc-log-cell"><span class="tfc-badge-ok">200 OK</span></td>
-      </tr>
-    `;
+      </tr>`;
   }).join('');
+
+  document.getElementById('tfc-log-count').textContent = `Log records: ${tfcState.logs.length}`;
 }
 
-/* ── Filter buttons ───────────────────────────────────────── */
-function setupTrafficFilterBtns() {
-  document.querySelectorAll('[data-tfc-filter]').forEach(btn => {
-    btn.addEventListener('click', () => {
-      trafficFilter = btn.dataset.tfcFilter;
-      document.querySelectorAll('[data-tfc-filter]').forEach(b => b.classList.remove('tfc-filter-active'));
-      btn.classList.add('tfc-filter-active');
+function renderTrafficFilterButtons(instanceIds) {
+  const group = document.querySelector('.tfc-filter-group');
+  if (!group) return;
+
+  const html = ['<button class="tfc-filter-btn tfc-filter-active" data-tfc-filter="all">All</button>']
+    .concat(instanceIds.map((id) => `<button class="tfc-filter-btn" data-tfc-filter="${id}">${id}</button>`))
+    .join('');
+
+  group.innerHTML = html;
+  group.querySelectorAll('[data-tfc-filter]').forEach((button) => {
+    button.addEventListener('click', () => {
+      tfcState.filter = button.dataset.tfcFilter;
+      group.querySelectorAll('[data-tfc-filter]').forEach((item) => item.classList.remove('tfc-filter-active'));
+      button.classList.add('tfc-filter-active');
       renderTrafficLogTable();
     });
   });
 }
 
-/* ── Clear logs ───────────────────────────────────────────── */
-function setupClearBtn() {
-  const btn = document.getElementById('tfc-clear-btn');
-  if (btn) btn.addEventListener('click', () => {
-    trafficLogs.length = 0;
-    seenTrafficKeys.clear();
-    renderTrafficLogTable();
-  });
-}
-
-/* ── Generate test traffic ────────────────────────────────── */
-function setupTfcGenerateBtn() {
-  const btn = document.getElementById('tfc-generate-btn');
-  if (!btn) return;
-  btn.addEventListener('click', async () => {
-    if (btn.disabled) return;
-    btn.disabled = true;
-    btn.textContent = 'Generating...';
-    const tasks = Array.from({ length: 20 }, (_, i) =>
-      new Promise(resolve => setTimeout(() => fetch(LB_BASE_TRAFFIC).catch(() => null).finally(resolve), i * 120))
-    );
-    await Promise.all(tasks);
-    btn.disabled = false;
-    btn.textContent = '⚡ Generate Traffic';
-  });
-}
-
-/* ── Listen to lb-stats ───────────────────────────────────── */
-window.addEventListener('lb-stats', (e) => {
-  if (document.getElementById('page-traffic')?.classList.contains('hidden')) {
-    // Still update chart queues even off-page for continuity
-    updateTrafficChart(e.detail.servers);
-    return;
+function setupActions() {
+  const clearBtn = document.getElementById('tfc-clear-btn');
+  if (clearBtn) {
+    clearBtn.addEventListener('click', () => {
+      tfcState.logs.length = 0;
+      tfcState.seenKeys.clear();
+      renderTrafficLogTable();
+    });
   }
-  const { servers, recentRequests, metrics } = e.detail;
-  updateTrafficChart(servers);
-  updateTrafficStats(servers, metrics);
-  updateServerRpsBars(servers);
-  addTrafficLog(recentRequests);
+
+  const generateBtn = document.getElementById('tfc-generate-btn');
+  if (generateBtn) {
+    generateBtn.addEventListener('click', async () => {
+      if (generateBtn.disabled) return;
+      generateBtn.disabled = true;
+      generateBtn.textContent = 'Generating...';
+
+      const tasks = Array.from({ length: 20 }, (_, index) =>
+        new Promise((resolve) => setTimeout(() => fetch(`http://${window.location.hostname}:8000`).catch(() => null).finally(resolve), index * 120))
+      );
+
+      await Promise.all(tasks);
+      generateBtn.disabled = false;
+      generateBtn.textContent = 'Generate Traffic';
+    });
+  }
+}
+
+window.addEventListener('lb-stats', (event) => {
+  updateTrafficChart(event.detail);
+  if (document.getElementById('page-traffic')?.classList.contains('hidden')) return;
+
+  updateTrafficStats(event.detail);
+  updateServerBars(event.detail);
+  addTrafficLogs(event.detail);
 });
 
-/* ── Init on DOM ready ────────────────────────────────────── */
 document.addEventListener('DOMContentLoaded', () => {
   initTrafficChart();
-  setupTrafficFilterBtns();
-  setupClearBtn();
-  setupTfcGenerateBtn();
+  setupActions();
+  renderTrafficLogTable();
 });
 
 window._initTrafficChart = initTrafficChart;
-
-// Update traffic chart theme colors
-const origUpdateChartTheme = window._updateChartTheme;
-window._updateChartTheme = function() {
-  if (origUpdateChartTheme) origUpdateChartTheme();
-  if (!tfcChart) return;
-  const style = getComputedStyle(document.documentElement);
-  const gridColor = style.getPropertyValue('--chart-grid').trim() || 'rgba(255,255,255,0.04)';
-  const borderColor = style.getPropertyValue('--chart-border').trim() || 'rgba(255,255,255,0.06)';
-  const tickColor = style.getPropertyValue('--chart-tick').trim() || '#5a78a0';
-  const tooltipBg = style.getPropertyValue('--tooltip-bg').trim() || '#1a2035';
-  const tooltipBorder = style.getPropertyValue('--tooltip-border').trim() || 'rgba(255,255,255,0.12)';
-  const textPrimary = style.getPropertyValue('--text-primary').trim() || '#e8edf5';
-  const textSecondary = style.getPropertyValue('--text-secondary').trim() || '#8fa3c0';
-
-  tfcChart.options.scales.x.ticks.color = tickColor;
-  tfcChart.options.scales.x.grid.color = gridColor;
-  tfcChart.options.scales.x.border.color = borderColor;
-  tfcChart.options.scales.y.ticks.color = tickColor;
-  tfcChart.options.scales.y.grid.color = gridColor;
-  tfcChart.options.scales.y.border.color = borderColor;
-  tfcChart.options.scales.y.title.color = tickColor;
-  tfcChart.options.plugins.legend.labels.color = textSecondary;
-  tfcChart.options.plugins.tooltip.backgroundColor = tooltipBg;
-  tfcChart.options.plugins.tooltip.borderColor = tooltipBorder;
-  tfcChart.options.plugins.tooltip.titleColor = textPrimary;
-  tfcChart.options.plugins.tooltip.bodyColor = textSecondary;
-  tfcChart.update();
-};

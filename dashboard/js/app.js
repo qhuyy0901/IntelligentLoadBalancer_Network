@@ -1,15 +1,7 @@
 
-
-// ── LB API base URL — dùng host hiện tại để hoạt động cả local lẫn EC2 public
-const LB_PORT = 8000;  // Phải khớp với config/servers.json → loadBalancer.port
+const LB_PORT = 8000;
 const LB_API_BASE = `http://${window.location.hostname}:${LB_PORT}`;
-
-// ── Bảng màu tương ứng từng EC2 server 
-const COLORS = {
-  'ec2-1': '#0bf52a',
-  'ec2-2': '#f50b0b',
-  'ec2-3': '#490bf5'
-};
+const INSTANCE_COLORS = ['#2dd4bf', '#3b82f6', '#f59e0b', '#f43f5e', '#22c55e', '#8b5cf6', '#a855f7'];
 
 // ── Lưu tham chiếu các phần tử DOM ────────────────────────────────────────
 const serverTableBody = document.getElementById('serverTableBody');
@@ -21,8 +13,6 @@ const metricThroughputEl = document.getElementById('metricThroughput');
 const metricThroughputHintEl = document.getElementById('metricThroughputHint');
 const metricAvgLatencyEl = document.getElementById('metricAvgLatency');
 const metricAvgLatencyHintEl = document.getElementById('metricAvgLatencyHint');
-const metricP95LatencyEl = document.getElementById('metricP95Latency');
-const metricP95LatencyHintEl = document.getElementById('metricP95LatencyHint');
 const metricPacketLossEl = document.getElementById('metricPacketLoss');
 const metricPacketLossHintEl = document.getElementById('metricPacketLossHint');
 const metricSuccessRateEl = document.getElementById('metricSuccessRate');
@@ -70,18 +60,8 @@ if (generateBtn) {
   });
 }
 
-// ── Bật/Tắt EC2 Server từ Dashboard 
-async function toggleServer(serverId, currentEnabled) {
-  const newEnabled = !currentEnabled;
-  try {
-    await fetch(`${LB_API_BASE}/lb/config/server?id=${encodeURIComponent(serverId)}&enabled=${newEnabled}`, { method: 'POST' });
-  } catch (e) {
-    console.warn('[toggleServer] Không thể kết nối đến LB:', e);
-  }
-}
-
-// ── Logic Modal Chi Tiết Server 
-let serverSnapshot = {}; // Lưu bản sao dữ liệu server mới nhất
+let serverSnapshot = {};
+let latestAwsPayload = null;
 
 function formatMetricCount(value) {
   return `${Math.round(Number(value || 0))}`;
@@ -100,38 +80,38 @@ function formatMetricMs(value) {
 }
 
 function formatAlgorithmName(value) {
-  return (value || 'round-robin').replace(/-/g, ' ').toUpperCase();
+  return (value || 'AWS ALB').replace(/-/g, ' ').toUpperCase();
 }
 
-function calculateDistributionBalance(servers = []) {
-  const enabled = servers.filter((server) => server.enabled !== false);
-  if (enabled.length <= 1) return 100;
-
-  const counts = enabled.map((server) => Number(server.requestCount || 0));
-  const total = counts.reduce((sum, value) => sum + value, 0);
-  if (total === 0) return 100;
-
-  const ideal = total / enabled.length;
-  const deviation = counts.reduce((sum, value) => sum + Math.abs(value - ideal), 0) / enabled.length;
-  const ratio = Math.max(0, 1 - (deviation / ideal));
-  return Number((ratio * 100).toFixed(2));
+function getInstanceColor(instanceId, index) {
+  const fallbackIndex = typeof index === 'number' ? index : 0;
+  const hash = Array.from(String(instanceId || 'instance')).reduce((acc, ch) => acc + ch.charCodeAt(0), 0);
+  return INSTANCE_COLORS[(hash + fallbackIndex) % INSTANCE_COLORS.length];
 }
 
 function openModal(serverId) {
   const s = serverSnapshot[serverId];
   if (!s) return;
-  document.getElementById('modalTitle').textContent = `${s.name} — Chi tiết`;
+
+  const target = (latestAwsPayload?.targetGroup?.registeredTargets || []).find((item) => item.targetId === serverId);
+  const traffic = latestAwsPayload?.traffic?.byInstance?.[serverId] || {};
+
+  document.getElementById('modalTitle').textContent = `${s.name} - AWS EC2 Details`;
   document.getElementById('modalBody').innerHTML = `
-    <div class="modal-stat"><span class="modal-stat-label">Tên server</span><span class="modal-stat-value">${s.name}</span></div>
-    <div class="modal-stat"><span class="modal-stat-label">Domain</span><span class="modal-stat-value">${s.domain}</span></div>
-    <div class="modal-stat"><span class="modal-stat-label">Cổng (Port)</span><span class="modal-stat-value">${s.port}</span></div>
-    <div class="modal-stat"><span class="modal-stat-label">Trạng thái</span><span class="modal-stat-value" style="color:${s.status === 'up' ? '#86efac' : '#fca5a5'}">${s.status === 'up' ? 'Active' : 'Disabled'}</span></div>
-    <div class="modal-stat"><span class="modal-stat-label">Tổng request đã xử lý</span><span class="modal-stat-value">${s.requestCount}</span></div>
-    <div class="modal-stat"><span class="modal-stat-label">Kết nối đang xử lý</span><span class="modal-stat-value">${s.activeConnections}</span></div>
-    <div class="modal-stat"><span class="modal-stat-label">Request / 2 giây</span><span class="modal-stat-value">${s.rps}</span></div>
+    <div class="modal-stat"><span class="modal-stat-label">Instance ID</span><span class="modal-stat-value">${s.instanceId}</span></div>
+    <div class="modal-stat"><span class="modal-stat-label">Name</span><span class="modal-stat-value">${s.name}</span></div>
+    <div class="modal-stat"><span class="modal-stat-label">State</span><span class="modal-stat-value">${s.state}</span></div>
+    <div class="modal-stat"><span class="modal-stat-label">Public IP</span><span class="modal-stat-value">${s.publicIp || 'N/A'}</span></div>
+    <div class="modal-stat"><span class="modal-stat-label">Private IP</span><span class="modal-stat-value">${s.privateIp || 'N/A'}</span></div>
+    <div class="modal-stat"><span class="modal-stat-label">AZ</span><span class="modal-stat-value">${s.availabilityZone || 'N/A'}</span></div>
+    <div class="modal-stat"><span class="modal-stat-label">Target Health</span><span class="modal-stat-value">${target?.healthState || 'unknown'}</span></div>
+    <div class="modal-stat"><span class="modal-stat-label">Requests (60s)</span><span class="modal-stat-value">${traffic.requestCount || 0}</span></div>
+    <div class="modal-stat"><span class="modal-stat-label">Req/s (60s)</span><span class="modal-stat-value">${Number(traffic.requestRate || 0).toFixed(2)}</span></div>
   `;
   document.getElementById('modalOverlay').classList.remove('hidden');
 }
+
+window.openModal = openModal;
 
 // Đóng modal khi nhấn nút X hoặc click ra ngoài
 document.getElementById('modalClose').addEventListener('click', () => {
@@ -142,34 +122,41 @@ document.getElementById('modalOverlay').addEventListener('click', e => {
     document.getElementById('modalOverlay').classList.add('hidden');
 });
 
-// Nút "Details" tổng — mở chi tiết server đầu tiên
 document.getElementById('btnAllDetails').addEventListener('click', () => {
   const first = Object.keys(serverSnapshot)[0];
   if (first) openModal(first);
 });
 
-// ── Render Bảng Trạng Thái Server 
-function renderServerTable(servers) {
-  const activeServers = servers.filter((server) => server.enabled !== false);
-  serverSnapshot = {};
-  activeServers.forEach(s => { serverSnapshot[s.id] = s; });
+function renderServerTable(payload) {
+  const instances = payload.ec2Instances || [];
+  const targetMap = new Map((payload.targetGroup?.registeredTargets || []).map((target) => [target.targetId, target]));
+  const trafficMap = payload.traffic?.byInstance || {};
 
-  if (activeServers.length === 0) {
+  serverSnapshot = {};
+  instances.forEach((instance) => {
+    serverSnapshot[instance.instanceId] = instance;
+  });
+
+  if (instances.length === 0) {
     serverTableBody.innerHTML = `
       <tr>
-        <td colspan="4" style="text-align:center;padding:24px;color:var(--text-muted)">Chưa có EC2 nào tham gia Target Group. Hãy tạo traffic để Auto Scaling scale out.</td>
+        <td colspan="4" style="text-align:center;padding:24px;color:var(--text-muted)">Loading AWS data...</td>
       </tr>
     `;
     return;
   }
 
-  serverTableBody.innerHTML = activeServers.map(s => {
-    const isEnabled = s.enabled !== false;
-    const isUp = s.status === 'up' && isEnabled;
-    const color = COLORS[s.id] || '#fff';
-    const statusClass = !isEnabled ? 'status-disabled' : (isUp ? 'status-up' : 'status-down');
-    const statusDot = !isEnabled ? 'disabled' : s.status;
-    const statusText = !isEnabled ? 'Paused' : (isUp ? 'Active' : 'Disabled');
+  serverTableBody.innerHTML = instances.map((instance, index) => {
+    const target = targetMap.get(instance.instanceId);
+    const traffic = trafficMap[instance.instanceId] || {};
+    const color = getInstanceColor(instance.instanceId, index);
+    const state = String(instance.state || 'unknown').toLowerCase();
+    const health = target?.healthState || 'unused';
+    const isHealthy = health === 'healthy';
+    const statusClass = isHealthy ? 'status-up' : 'status-down';
+    const statusDot = isHealthy ? 'up' : 'down';
+    const statusText = `${state} / ${health}`;
+
     return `
       <tr>
         <td>
@@ -181,10 +168,10 @@ function renderServerTable(servers) {
                 <rect x="9" y="4" width="4" height="8" rx="1" fill="${color}dd"/>
                 <rect x="15" y="4" width="6" height="8" rx="1" fill="${color}dd"/>
               </svg>
-              <strong>${s.name}</strong>
-              <span style="color:var(--text-muted);font-weight:400">(${s.domain})</span>
+              <strong>${instance.name}</strong>
+              <span style="color:var(--text-muted);font-weight:400">(${instance.instanceId})</span>
             </div>
-            <div class="instance-id-badge">● Req: ${s.requestCount} | Conn: ${s.activeConnections}${!isEnabled ? ' | Excluded from pool' : ''}</div>
+            <div class="instance-id-badge">IP: ${instance.privateIp || instance.publicIp || 'N/A'} | AZ: ${instance.availabilityZone || 'N/A'}</div>
           </div>
         </td>
         <td>
@@ -193,15 +180,10 @@ function renderServerTable(servers) {
             ${statusText}
           </div>
         </td>
-        <td><span class="req-count">${s.requestCount}</span></td>
+        <td><span class="req-count">${traffic.requestCount || 0}</span></td>
         <td>
           <div style="display:flex;gap:6px;align-items:center">
-            <button class="btn-detail" onclick="openModal('${s.id}')">Details ›</button>
-            <button class="btn-toggle ${isEnabled ? 'btn-toggle-off' : 'btn-toggle-on'}"
-              onclick="toggleServer('${s.id}', ${isEnabled})"
-              title="${isEnabled ? 'Remove from target group' : 'Add to target group'}">
-              ${isEnabled ? 'Disable' : 'Enable'}
-            </button>
+            <button class="btn-detail" onclick="openModal('${instance.instanceId}')">Details ›</button>
           </div>
         </td>
       </tr>
@@ -209,54 +191,66 @@ function renderServerTable(servers) {
   }).join('');
 }
 
-function renderPerformanceMetrics(metrics = {}, algorithm = 'round-robin', servers = [], autoScaling = null) {
-  const enabledServers = servers.filter((server) => server.enabled !== false);
-  const healthyServers = enabledServers.filter((server) => server.status === 'up');
+function renderPerformanceMetrics(payload) {
+  const cloudWatch = payload.cloudWatch || {};
+  const targetGroup = payload.targetGroup || {};
+  const asg = payload.autoScaling || {};
+  const healthTotal = Number(targetGroup.healthyTargets || 0) + Number(targetGroup.unhealthyTargets || 0);
 
-  metricThroughputEl.textContent = formatMetricRps(metrics.throughputRps);
-  metricThroughputHintEl.textContent = `${formatMetricCount(metrics.requestsInWindow || 0)} requests in ${Math.round((metrics.windowMs || 10000) / 1000)}s window`;
-  metricAvgLatencyEl.textContent = formatMetricMs(metrics.latencyAvgMs);
-  metricAvgLatencyHintEl.textContent = `p50 ${formatMetricMs(metrics.latencyP50Ms)} | stdev ${formatMetricMs(metrics.latencyStdevMs)}`;
-  metricP95LatencyEl.textContent = formatMetricMs(metrics.latencyP99Ms);
-  metricP95LatencyHintEl.textContent = `p97.5 ${formatMetricMs(metrics.latencyP975Ms)} | max ${formatMetricMs(metrics.latencyMaxMs)}`;
-  metricPacketLossEl.textContent = formatMetricPct(metrics.packetLossPct);
-  metricPacketLossHintEl.textContent = `${formatMetricCount(metrics.failureCount || 0)} failed attempts in window`;
-  metricSuccessRateEl.textContent = formatMetricPct(metrics.successRatePct);
-  metricSuccessRateHintEl.textContent = `${formatMetricCount(metrics.totalAttempts || 0)} total attempts`;
-  metricAlgorithmEl.textContent = formatAlgorithmName(algorithm);
-  metricPoolHealthEl.textContent = `${healthyServers.length}/${enabledServers.length} healthy`;
-  metricModeHintEl.textContent = autoScaling
-    ? `${enabledServers.length}/${autoScaling.maxCapacity} EC2 active, ${algorithm || 'round-robin'} mode`
-    : `${enabledServers.length} target members, ${algorithm || 'round-robin'} mode`;
+  metricThroughputEl.textContent = cloudWatch.requestRate == null ? 'No CloudWatch data yet' : formatMetricRps(cloudWatch.requestRate);
+  metricThroughputHintEl.textContent = cloudWatch.requestCount == null
+    ? 'RequestCount metric is not available yet'
+    : `${formatMetricCount(cloudWatch.requestCount)} requests / ${cloudWatch.periodSeconds || 60}s`;
 
-  const healthyCount = metrics.healthyServers || 0;
-  const totalCount = metrics.totalServers || 0;
-  const loss = Number(metrics.packetLossPct || 0);
+  metricAvgLatencyEl.textContent = cloudWatch.targetResponseTime == null
+    ? 'No CloudWatch data yet'
+    : formatMetricMs(Number(cloudWatch.targetResponseTime) * 1000);
+  metricAvgLatencyHintEl.textContent = cloudWatch.targetResponseTime == null
+    ? 'TargetResponseTime is pending'
+    : 'CloudWatch TargetResponseTime';
 
-  if (healthyCount === 0) {
+  metricPacketLossEl.textContent = cloudWatch.errorRate == null ? 'No CloudWatch data yet' : formatMetricPct(cloudWatch.errorRate);
+  metricPacketLossHintEl.textContent = cloudWatch.errorRate == null
+    ? 'HTTPCode_Target_4XX/5XX has no datapoint yet'
+    : `4XX: ${cloudWatch.httpCodeTarget4xx || 0} | 5XX: ${cloudWatch.httpCodeTarget5xx || 0}`;
+
+  const successRate = cloudWatch.errorRate == null ? null : Math.max(0, 100 - Number(cloudWatch.errorRate));
+  metricSuccessRateEl.textContent = successRate == null ? 'No CloudWatch data yet' : formatMetricPct(successRate);
+  metricSuccessRateHintEl.textContent = cloudWatch.httpCodeTarget2xx == null
+    ? 'HTTPCode_Target_2XX has no datapoint yet'
+    : `2XX: ${cloudWatch.httpCodeTarget2xx}`;
+
+  metricAlgorithmEl.textContent = formatAlgorithmName('aws-alb');
+  metricPoolHealthEl.textContent = healthTotal > 0
+    ? `${targetGroup.healthyTargets || 0}/${healthTotal} healthy`
+    : 'No targets';
+
+  metricModeHintEl.textContent = asg.groupName
+    ? `ASG ${asg.groupName}: min ${asg.minSize ?? '-'} / desired ${asg.desiredCapacity ?? '-'} / max ${asg.maxSize ?? '-'} / current ${asg.currentInstances ?? 0}`
+    : 'Auto Scaling group is not configured';
+
+  if (payload.awsErrors?.length) {
     alertIconEl.textContent = '!';
-    alertTextEl.innerHTML = 'Load balancer is <strong>degraded</strong>: no healthy backend is currently available.';
+    alertTextEl.innerHTML = `<strong>AWS integration error:</strong> ${payload.awsErrors[0].message}`;
     return;
   }
 
-  if (loss > 0 || healthyCount < totalCount) {
+  if (cloudWatch.noData) {
     alertIconEl.textContent = '!';
-    alertTextEl.innerHTML = `Load balancer is <strong>handling failover</strong> with ${healthyCount}/${totalCount} healthy backends and ${formatMetricPct(loss)} request loss.`;
+    alertTextEl.innerHTML = 'No CloudWatch data yet. Generate traffic through AWS ALB and wait 1-2 minutes.';
+    return;
+  }
+
+  if ((targetGroup.healthyTargets || 0) === 0) {
+    alertIconEl.textContent = '!';
+    alertTextEl.innerHTML = 'Target Group currently has <strong>0 healthy targets</strong>. Dashboard is showing live AWS state.';
     return;
   }
 
   alertIconEl.textContent = '✓';
-    if (autoScaling) {
-      alertTextEl.innerHTML = `Auto Scaling is <strong>running</strong> with ${autoScaling.activeCapacity}/${autoScaling.maxCapacity} EC2 active. Load balancer is routing in ${formatAlgorithmName(algorithm)} mode.`;
-      return;
-    }
-
-    alertTextEl.innerHTML = `Load balancer is <strong>running</strong> in ${formatAlgorithmName(algorithm)} mode with ${healthyCount}/${totalCount} healthy backends.`;
+  alertTextEl.innerHTML = `ALB is healthy with <strong>${targetGroup.healthyTargets}/${healthTotal}</strong> targets. Request rate: <strong>${cloudWatch.requestRate || 0} req/s</strong>.`;
 }
 
-// ── Render Bảng Lịch Sử Request 
-
-// Định dạng thời gian hiển thị
 function formatTime(iso) {
   const d = new Date(iso);
   return d.toLocaleTimeString('vi-VN', { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' });
@@ -270,7 +264,7 @@ function serverChip(serverId, serverName) {
 
 // Tạo chip nhỏ cho cột phân phối
 function distChip(serverId, serverName) {
-  const color = COLORS[serverId] || '#fff';
+  const color = getInstanceColor(serverId, 0);
   return `<span class="dist-chip"><span class="dist-line" style="background:${color}"></span>${serverName}</span>`;
 }
 
@@ -286,7 +280,7 @@ function addProcessedKey(key) {
 
 function renderRequestsTable(requests) {
   if (!requests || requests.length === 0) {
-    requestsTableBody.innerHTML = `<tr><td colspan="4" style="color:var(--text-muted);text-align:center;padding:24px">Chưa có request — hãy gửi traffic đến ${LB_API_BASE}</td></tr>`;
+    requestsTableBody.innerHTML = `<tr><td colspan="4" style="color:var(--text-muted);text-align:center;padding:24px">No CloudWatch data yet or no requests were reported to LB logger.</td></tr>`;
     return;
   }
 
@@ -308,7 +302,7 @@ function renderRequestsTable(requests) {
     if (!ipHistory[ip]) ipHistory[ip] = [];
     if (!ipHistory[ip].includes(r.serverId)) {
       ipHistory[ip].unshift(r.serverId);
-      if (ipHistory[ip].length > 3) ipHistory[ip].pop(); // Giữ tối đa 3 server gần nhất
+      if (ipHistory[ip].length > 3) ipHistory[ip].pop();
     }
 
     const distChips = ipHistory[ip].map(sid => distChip(sid, sid.toUpperCase())).join('');
@@ -324,7 +318,6 @@ function renderRequestsTable(requests) {
   }).join('');
 }
 
-// ── Xử Lý Sự Kiện WebSocket Stats 
 let lastUpdateTime = 0;
 
 window.addEventListener('lb-stats', (e) => {
@@ -334,31 +327,25 @@ window.addEventListener('lb-stats', (e) => {
   if (now - lastUpdateTime < 200) return;
   lastUpdateTime = now;
 
-  const { servers, recentRequests, metrics, algorithm, autoScaling } = e.detail;
+  const payload = e.detail;
+  latestAwsPayload = payload;
 
-  renderServerTable(servers);          // Cập nhật bảng trạng thái server
-  renderRequestsTable(recentRequests); // Cập nhật bảng lịch sử request
-  renderPerformanceMetrics(metrics, algorithm, servers, autoScaling);
+  renderServerTable(payload);
+  renderRequestsTable(payload.recentRequests || []);
+  renderPerformanceMetrics(payload);
 
-  if (window.updateChart) window.updateChart(servers); // Cập nhật biểu đồ
+  if (window.updateChart) window.updateChart(payload.ec2Instances || [], payload.traffic || {});
 
   lastUpdatedEl.textContent = `Cập nhật lần cuối: ${new Date().toLocaleTimeString('vi-VN')}`;
 });
 
-// ── Hiển Thị Dữ Liệu Mặc Định Trước Khi Nhận Dữ Liệu WebSocket ───────────
 document.addEventListener('DOMContentLoaded', () => {
-  const skeleton = ['ec2-1'].map((id, i) => ({
-    id,
-    name: `EC2-${i + 1}`,
-    domain: `${id}.example.com`,
-    port: 3001 + i,
-    status: 'up',
-    requestCount: 0,
-    activeConnections: 0,
-    rps: 0,
-    enabled: true
-  }));
-  renderServerTable(skeleton);
+  renderServerTable({ ec2Instances: [], targetGroup: { registeredTargets: [] }, traffic: { byInstance: {} } });
   renderRequestsTable([]);
-  renderPerformanceMetrics({ healthyServers: 1, totalServers: 1, successRatePct: 100, throughputRps: 0 }, 'round-robin', skeleton, { activeCapacity: 1, maxCapacity: 3 });
+  renderPerformanceMetrics({
+    cloudWatch: { noData: true },
+    targetGroup: { healthyTargets: 0, unhealthyTargets: 0 },
+    autoScaling: {},
+    awsErrors: []
+  });
 });

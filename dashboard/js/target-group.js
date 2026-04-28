@@ -1,206 +1,178 @@
-/**
- * ============================================================================
- *  TARGET GROUP — Trang Quản Lý Nhóm Server Kiểu AWS
- * ============================================================================
- *
- *  Trang này mô phỏng giao diện AWS Target Group, hiển thị:
- *  - Danh sách EC2 instance với trạng thái healthy / unhealthy / draining
- *  - Lịch sử health check (sparkbar 30 lần check gần nhất)
- *  - Tổng hợp: số server khỏe, tổng request, RPS, connections
- *  - Nút Register / Deregister để bật/tắt server khỏi pool (gọi API LB)
- *  - Modal chi tiết từng server
- *
- *  NGUỒN DỮ LIỆU: Lắng nghe sự kiện 'lb-stats' từ ws.js (giống app.js)
- * ============================================================================
- */
+const tgHealthHistory = {};
+const TG_MAX_HISTORY = 30;
+let tgSnapshot = {
+  ec2Instances: [],
+  targetGroup: { registeredTargets: [] }
+};
 
-/* ── Lịch sử Health Check theo từng instance ─────────────── */
-const healthHistory = {}; // { serverId: [ 'healthy' | 'unhealthy', ... ] (tối đa 30 lần) }
-const MAX_HISTORY = 30;
-
-function pushHealth(serverId, isHealthy) {
-  if (!healthHistory[serverId]) healthHistory[serverId] = [];
-  healthHistory[serverId].push(isHealthy ? 'healthy' : 'unhealthy');
-  if (healthHistory[serverId].length > MAX_HISTORY) healthHistory[serverId].shift();
+function pushHealthHistory(targetId, healthState) {
+  if (!tgHealthHistory[targetId]) tgHealthHistory[targetId] = [];
+  tgHealthHistory[targetId].push(healthState === 'healthy' ? 'healthy' : 'unhealthy');
+  if (tgHealthHistory[targetId].length > TG_MAX_HISTORY) tgHealthHistory[targetId].shift();
 }
 
-/* ── Render health sparkbar ───────────────────────────────── */
-function renderHealthBar(serverId) {
-  const history = healthHistory[serverId] || [];
-  if (history.length === 0) {
-    return `<span style="color:var(--text-muted);font-size:11px">No data</span>`;
+function renderHealthBar(targetId) {
+  const history = tgHealthHistory[targetId] || [];
+  if (!history.length) return `<span style="color:var(--text-muted);font-size:11px">No data</span>`;
+  return `<div style="display:flex;align-items:flex-end;gap:0">${history
+    .map((item) => {
+      const color = item === 'healthy' ? '#22c55e' : '#ef4444';
+      return `<span style="display:inline-block;width:5px;height:16px;background:${color};border-radius:2px;opacity:.85;margin:0 1px"></span>`;
+    })
+    .join('')}</div>`;
+}
+
+function getTargetRows(payload) {
+  const ec2Map = new Map((payload.ec2Instances || []).map((instance) => [instance.instanceId, instance]));
+  return (payload.targetGroup?.registeredTargets || []).map((target) => ({
+    ...target,
+    instance: ec2Map.get(target.targetId) || null
+  }));
+}
+
+function updateTargetGroupHeader(payload) {
+  const arnEl = document.querySelector('.tg-arn');
+  const badgeEls = document.querySelectorAll('.tg-protocol-badge');
+  if (arnEl) {
+    arnEl.textContent = payload.targetGroup?.arn || 'No TARGET_GROUP_ARN configured';
   }
-  const bars = history.map(h => {
-    const color = h === 'healthy' ? '#22c55e' : '#ef4444';
-    return `<span style="display:inline-block;width:5px;height:16px;background:${color};border-radius:2px;opacity:0.85;margin:0 1px"></span>`;
-  }).join('');
-  return `<div style="display:flex;align-items:flex-end;gap:0">${bars}</div>`;
+
+  if (badgeEls[0]) {
+    const protocol = payload.targetGroup?.protocol || 'HTTP';
+    const port = payload.targetGroup?.port || 80;
+    badgeEls[0].textContent = `${protocol} · Port ${port}`;
+  }
+
+  if (badgeEls[1]) {
+    badgeEls[1].textContent = payload.loadBalancer?.dnsName
+      ? `ALB: ${payload.loadBalancer.dnsName}`
+      : 'ALB DNS unavailable';
+  }
 }
 
-/* ── Render summary badges ────────────────────────────────── */
-function renderTGSummary(servers) {
-  const activeServers = servers.filter((server) => server.enabled !== false);
-  const total = activeServers.length;
-  const healthy = activeServers.filter(s => s.status === 'up').length;
-  const unhealthy = total - healthy;
-  const totalReq = activeServers.reduce((a, s) => a + (s.requestCount || 0), 0);
-  const totalRps = activeServers.reduce((a, s) => a + (Number(s.rps) || 0), 0);
-  const totalConn = activeServers.reduce((a, s) => a + (s.activeConnections || 0), 0);
+function renderTGSummary(payload, rows) {
+  const healthy = rows.filter((row) => row.healthState === 'healthy').length;
+  const unhealthy = rows.length - healthy;
+  const healthyPct = rows.length ? Math.round((healthy / rows.length) * 100) : 0;
 
-  document.getElementById('tg-healthy-count').textContent = healthy;
-  document.getElementById('tg-unhealthy-count').textContent = unhealthy;
+  const totalReq = rows.reduce((sum, row) => {
+    const traffic = payload.traffic?.byInstance?.[row.targetId];
+    return sum + Number(traffic?.requestCount || 0);
+  }, 0);
+
+  const totalRps = rows.reduce((sum, row) => {
+    const traffic = payload.traffic?.byInstance?.[row.targetId];
+    return sum + Number(traffic?.requestRate || 0);
+  }, 0);
+
+  document.getElementById('tg-healthy-count').textContent = String(healthy);
+  document.getElementById('tg-unhealthy-count').textContent = String(unhealthy);
   document.getElementById('tg-total-req').textContent = totalReq.toLocaleString();
-  document.getElementById('tg-total-rps').textContent = totalRps.toFixed(1);
-  document.getElementById('tg-total-conn').textContent = totalConn;
-  document.getElementById('tg-healthy-pct').textContent =
-    total > 0 ? `${Math.round((healthy / total) * 100)}%` : '—';
+  document.getElementById('tg-total-rps').textContent = totalRps.toFixed(2);
+  document.getElementById('tg-total-conn').textContent = '-';
+  document.getElementById('tg-healthy-pct').textContent = rows.length ? `${healthyPct}%` : '0%';
 }
 
-/* ── Render main target group table ──────────────────────── */
-function renderTargetGroupTable(servers) {
+function renderTargetGroupTable(payload) {
   const tbody = document.getElementById('tg-table-body');
   if (!tbody) return;
 
-  const activeServers = servers.filter((server) => server.enabled !== false);
-
-  if (activeServers.length === 0) {
-    tbody.innerHTML = `<tr><td colspan="5" style="text-align:center;padding:24px;color:var(--text-muted)">Chưa có target nào được register.</td></tr>`;
+  const rows = getTargetRows(payload);
+  if (!rows.length) {
+    tbody.innerHTML = `<tr><td colspan="5" style="text-align:center;padding:24px;color:var(--text-muted)">Loading AWS data...</td></tr>`;
+    renderTGSummary(payload, []);
     return;
   }
 
-  activeServers.forEach(s => pushHealth(s.id, s.status === 'up' && s.enabled !== false));
+  rows.forEach((row) => pushHealthHistory(row.targetId, row.healthState));
 
-  tbody.innerHTML = activeServers.map(s => {
-    const isEnabled = s.enabled !== false;
-    const isHealthy = s.status === 'up' && isEnabled;
-    const healthClass = !isEnabled ? 'tg-status-draining' : (isHealthy ? 'tg-status-healthy' : 'tg-status-unhealthy');
-    const healthLabel = !isEnabled ? 'draining' : (isHealthy ? 'healthy' : 'unhealthy');
-    const rps = Number(s.rps || 0).toFixed(1);
-    const conn = s.activeConnections || 0;
-    const reqCount = (s.requestCount || 0).toLocaleString();
+  tbody.innerHTML = rows
+    .map((row) => {
+      const health = row.healthState || 'unknown';
+      const healthClass = health === 'healthy' ? 'tg-status-healthy' : 'tg-status-unhealthy';
+      const requestCount = Number(payload.traffic?.byInstance?.[row.targetId]?.requestCount || 0).toLocaleString();
+      const instance = row.instance;
+      const label = instance?.name || row.targetId;
+      const subtitle = instance ? `${instance.state} · ${instance.privateIp || instance.publicIp || 'N/A'}` : 'Instance data unavailable';
 
-    const color = { 'ec2-1': '#2dd4bf', 'ec2-2': '#3b82f6', 'ec2-3': '#f59e0b' }[s.id] || '#8fa3c0';
-
-    return `
-      <tr class="tg-row" data-id="${s.id}">
+      return `
+      <tr class="tg-row" data-id="${row.targetId}">
         <td class="tg-cell">
           <div class="tg-instance">
-            <div class="tg-instance-avatar" style="background:${color}22;border-color:${color}55;color:${color}">
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
-                <rect x="2" y="3" width="20" height="14" rx="3" opacity=".7"/>
-                <rect x="4" y="19" width="4" height="2" rx="1"/>
-                <rect x="10" y="19" width="4" height="2" rx="1"/>
-                <rect x="16" y="19" width="4" height="2" rx="1"/>
-                <rect x="4" y="19" width="16" height="1" rx=".5" opacity=".4"/>
-              </svg>
-            </div>
+            <div class="tg-instance-avatar" style="background:#3b82f622;border-color:#3b82f655;color:#60a5fa">EC2</div>
             <div>
-              <div class="tg-instance-name">${s.name}</div>
-              <div class="tg-instance-id">${s.id} · ${s.domain || s.id + '.local'}</div>
+              <div class="tg-instance-name">${label}</div>
+              <div class="tg-instance-id">${row.targetId} · ${subtitle}</div>
             </div>
           </div>
         </td>
         <td class="tg-cell">
           <div class="tg-health ${healthClass}">
             <span class="tg-health-dot"></span>
-            ${healthLabel}
+            ${health}
           </div>
         </td>
-        <td class="tg-cell tg-num">${reqCount}</td>
-        <td class="tg-cell">${renderHealthBar(s.id)}</td>
+        <td class="tg-cell tg-num">${requestCount}</td>
+        <td class="tg-cell">${renderHealthBar(row.targetId)}</td>
         <td class="tg-cell">
           <div class="tg-actions">
-            <button class="tg-btn-detail" onclick="openTGModal('${s.id}')">Details</button>
-            <button class="tg-btn-toggle ${isEnabled ? 'tg-btn-deregister' : 'tg-btn-register'}"
-              onclick="toggleTGServer('${s.id}', ${isEnabled})">
-              ${isEnabled ? 'Deregister' : 'Register'}
-            </button>
+            <button class="tg-btn-detail" onclick="openTGModal('${row.targetId}')">Details</button>
           </div>
         </td>
-      </tr>
-    `;
-  }).join('');
+      </tr>`;
+    })
+    .join('');
+
+  renderTGSummary(payload, rows);
 }
 
-/* ── Server Snapshot for modal ────────────────────────────── */
-let tgServerSnapshot = {};
+function openTGModal(targetId) {
+  const row = getTargetRows(tgSnapshot).find((item) => item.targetId === targetId);
+  if (!row) return;
 
-function openTGModal(serverId) {
-  const s = tgServerSnapshot[serverId];
-  if (!s) return;
-  const isHealthy = s.status === 'up' && s.enabled !== false;
-  const healthColor = isHealthy ? '#22c55e' : '#ef4444';
-  const histArr = healthHistory[serverId] || [];
-  const healthyCount = histArr.filter(h => h === 'healthy').length;
-  const pct = histArr.length > 0 ? Math.round((healthyCount / histArr.length) * 100) : 0;
+  const history = tgHealthHistory[targetId] || [];
+  const healthyCount = history.filter((state) => state === 'healthy').length;
+  const uptimePct = history.length ? Math.round((healthyCount / history.length) * 100) : 0;
+  const traffic = tgSnapshot.traffic?.byInstance?.[targetId] || {};
 
-  document.getElementById('tg-modal-title').textContent = `${s.name} — Target Details`;
+  const instance = row.instance;
+  document.getElementById('tg-modal-title').textContent = `${instance?.name || targetId} - Target Details`;
   document.getElementById('tg-modal-body').innerHTML = `
     <div class="tg-modal-grid">
-      <div class="tg-modal-stat"><span class="tg-modal-label">Instance ID</span><span class="tg-modal-value">${s.id}</span></div>
-      <div class="tg-modal-stat"><span class="tg-modal-label">Name</span><span class="tg-modal-value">${s.name}</span></div>
-      <div class="tg-modal-stat"><span class="tg-modal-label">Domain</span><span class="tg-modal-value">${s.domain || '—'}</span></div>
-      <div class="tg-modal-stat"><span class="tg-modal-label">Port</span><span class="tg-modal-value">${s.port || '—'}</span></div>
-      <div class="tg-modal-stat"><span class="tg-modal-label">Health Status</span>
-        <span class="tg-modal-value" style="color:${healthColor};font-weight:700">${isHealthy ? '✓ healthy' : '✗ unhealthy'}</span>
-      </div>
-      <div class="tg-modal-stat"><span class="tg-modal-label">Uptime (30 checks)</span><span class="tg-modal-value">${pct}%</span></div>
-      <div class="tg-modal-stat"><span class="tg-modal-label">Total Requests</span><span class="tg-modal-value">${(s.requestCount || 0).toLocaleString()}</span></div>
-      <div class="tg-modal-stat"><span class="tg-modal-label">Active Connections</span><span class="tg-modal-value">${s.activeConnections || 0}</span></div>
-      <div class="tg-modal-stat"><span class="tg-modal-label">Requests / sec</span><span class="tg-modal-value">${Number(s.rps || 0).toFixed(2)} req/s</span></div>
-      <div class="tg-modal-stat" style="grid-column:1/-1"><span class="tg-modal-label">Health Check History (last ${histArr.length})</span>
-        <div style="margin-top:6px">${renderHealthBar(serverId)}</div>
-      </div>
+      <div class="tg-modal-stat"><span class="tg-modal-label">Target ID</span><span class="tg-modal-value">${targetId}</span></div>
+      <div class="tg-modal-stat"><span class="tg-modal-label">Health Status</span><span class="tg-modal-value">${row.healthState || 'unknown'}</span></div>
+      <div class="tg-modal-stat"><span class="tg-modal-label">Health Reason</span><span class="tg-modal-value">${row.healthReason || 'N/A'}</span></div>
+      <div class="tg-modal-stat"><span class="tg-modal-label">AZ</span><span class="tg-modal-value">${row.availabilityZone || instance?.availabilityZone || 'N/A'}</span></div>
+      <div class="tg-modal-stat"><span class="tg-modal-label">Port</span><span class="tg-modal-value">${row.port || tgSnapshot.targetGroup?.port || 'N/A'}</span></div>
+      <div class="tg-modal-stat"><span class="tg-modal-label">Requests (60s)</span><span class="tg-modal-value">${Number(traffic.requestCount || 0).toLocaleString()}</span></div>
+      <div class="tg-modal-stat"><span class="tg-modal-label">Req/s</span><span class="tg-modal-value">${Number(traffic.requestRate || 0).toFixed(2)}</span></div>
+      <div class="tg-modal-stat"><span class="tg-modal-label">Uptime (last ${history.length})</span><span class="tg-modal-value">${uptimePct}%</span></div>
+      <div class="tg-modal-stat" style="grid-column:1/-1"><span class="tg-modal-label">Health Check History</span><div style="margin-top:6px">${renderHealthBar(targetId)}</div></div>
     </div>
   `;
+
   document.getElementById('tg-modal-overlay').classList.remove('hidden');
 }
 
-document.addEventListener('DOMContentLoaded', () => {
+window.openTGModal = openTGModal;
+
+function setupModalClose() {
   const closeBtn = document.getElementById('tg-modal-close');
   const overlay = document.getElementById('tg-modal-overlay');
   if (closeBtn) closeBtn.addEventListener('click', () => overlay.classList.add('hidden'));
-  if (overlay) overlay.addEventListener('click', e => { if (e.target === overlay) overlay.classList.add('hidden'); });
-});
-
-/* ── Toggle server (register / deregister) ────────────────── */
-const LB_PORT_TG = 8000;
-const LB_API_TG = `http://${window.location.hostname}:${LB_PORT_TG}`;
-
-async function toggleTGServer(serverId, currentEnabled) {
-  try {
-    await fetch(`${LB_API_TG}/lb/config/server?id=${encodeURIComponent(serverId)}&enabled=${!currentEnabled}`, { method: 'POST' });
-  } catch (e) {
-    console.warn('[TG] Không thể kết nối LB:', e);
-  }
+  if (overlay) overlay.addEventListener('click', (event) => {
+    if (event.target === overlay) overlay.classList.add('hidden');
+  });
 }
 
-/* ── Listen to lb-stats events (from ws.js) ───────────────── */
-window.addEventListener('lb-stats', (e) => {
+window.addEventListener('lb-stats', (event) => {
   if (document.getElementById('page-target-group')?.classList.contains('hidden')) return;
-  const { servers } = e.detail;
-  tgServerSnapshot = {};
-  servers.forEach(s => { tgServerSnapshot[s.id] = s; });
-  renderTargetGroupTable(servers);
-  renderTGSummary(servers);
+  tgSnapshot = event.detail;
+  updateTargetGroupHeader(tgSnapshot);
+  renderTargetGroupTable(tgSnapshot);
 });
 
-/* ── Init skeleton ────────────────────────────────────────── */
 document.addEventListener('DOMContentLoaded', () => {
-  const skeleton = ['ec2-1'].map((id, i) => ({
-    id,
-    name: `EC2-${i + 1}`,
-    domain: `${id}.local`,
-    port: 3001 + i,
-    status: 'up',
-    requestCount: 0,
-    activeConnections: 0,
-    rps: 0,
-    enabled: true
-  }));
-  skeleton.forEach(s => { tgServerSnapshot[s.id] = s; });
-  if (!document.getElementById('page-target-group')?.classList.contains('hidden')) {
-    renderTargetGroupTable(skeleton);
-    renderTGSummary(skeleton);
-  }
+  setupModalClose();
+  renderTargetGroupTable({ ec2Instances: [], targetGroup: { registeredTargets: [] }, traffic: { byInstance: {} } });
 });
