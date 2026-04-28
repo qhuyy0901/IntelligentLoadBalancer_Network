@@ -5,8 +5,8 @@ dnf update -y
 dnf install -y nodejs git
 
 APP_ROOT="/opt/intelligent-load-balancer"
-APP_SUBDIR="aws/asg-backend"
-APP_ENTRY="server.js"
+APP_SUBDIR="ec2-web"
+APP_ENTRY="aws-backend.js"
 REPO_URL="${REPO_URL:-https://github.com/qhuyy0901/IntelligentLoadBalancer_Network.git}"
 APP_PORT="${APP_PORT:-3000}"
 

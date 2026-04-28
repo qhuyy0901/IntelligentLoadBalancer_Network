@@ -39,12 +39,15 @@ if (generateBtn) {
     generateBtn.disabled = true;
     generateBtn.textContent = 'Generating...';
 
+    // Prefer ALB URL from payload; fall back to custom LB on port 8000
+    const target = albTrafficUrl || LB_API_BASE;
+
     const totalRequests = 30;
     const tasks = [];
     for (let i = 0; i < totalRequests; i += 1) {
       const task = new Promise((resolve) => {
         setTimeout(() => {
-          fetch(LB_API_BASE)
+          fetch(target, { mode: 'no-cors' })
             .catch(() => null)
             .finally(resolve);
         }, i * 80);
@@ -60,6 +63,7 @@ if (generateBtn) {
 
 let serverSnapshot = {};
 let latestAwsPayload = null;
+let albTrafficUrl = null; // set from first WS payload
 
 function formatMetricCount(value) {
   return `${Math.round(Number(value || 0))}`;
@@ -215,7 +219,10 @@ function renderServerTable(payload) {
             ${statusText}
           </div>
         </td>
-        <td><span class="req-count">${traffic.requestCount || 0}</span></td>
+        <td>
+          <span class="req-count">${instance.metricsRequestCount != null ? instance.metricsRequestCount : (traffic.requestCount || 0)}</span>
+          ${instance.metricsReachable === false ? '<span style="font-size:10px;color:var(--text-muted);margin-left:4px">local LB</span>' : ''}
+        </td>
         <td>
           <div style="display:flex;gap:6px;align-items:center">
             <button class="btn-detail" onclick="openModal('${instance.instanceId}')">Details ›</button>
@@ -382,6 +389,12 @@ window.addEventListener('lb-stats', (e) => {
 
   const payload = e.detail;
   latestAwsPayload = payload;
+
+  // Resolve ALB URL from payload on first arrival
+  const albDns = payload.loadBalancer?.dnsName;
+  if (albDns && !albTrafficUrl) {
+    albTrafficUrl = `http://${albDns}`;
+  }
 
   renderServerTable(payload);
   renderRequestsTable(payload.recentRequests || []);

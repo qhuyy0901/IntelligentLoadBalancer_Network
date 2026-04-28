@@ -85,6 +85,41 @@ function toUserSafeError(error) {
   return { code, message };
 }
 
+// ── Fetch /metrics from a single EC2 private IP ───────────────────────────────
+function fetchInstanceMetrics(privateIp, timeout = 2000) {
+  return new Promise((resolve) => {
+    const req = require('http').get(
+      { hostname: privateIp, port: 3000, path: '/metrics', timeout },
+      (res) => {
+        let body = '';
+        res.on('data', (chunk) => { body += chunk; });
+        res.on('end', () => {
+          try { resolve(JSON.parse(body)); } catch { resolve(null); }
+        });
+      }
+    );
+    req.on('error', () => resolve(null));
+    req.on('timeout', () => { req.destroy(); resolve(null); });
+  });
+}
+
+// Enrich ec2Instances with live requestCount from /metrics on each private IP
+async function enrichWithInstanceMetrics(ec2Instances = []) {
+  const results = await Promise.all(
+    ec2Instances.map(async (instance) => {
+      const ip = instance.privateIp;
+      if (!ip) return instance;
+      const m = await fetchInstanceMetrics(ip);
+      return {
+        ...instance,
+        metricsRequestCount: m?.requestCount ?? null,
+        metricsReachable: m !== null,
+      };
+    })
+  );
+  return results;
+}
+
 function logAwsErrors(errors = []) {
   if (!errors.length) {
     lastAwsErrorSignature = null;
@@ -196,7 +231,22 @@ async function buildAwsPayload() {
   }));
   const traffic = buildTrafficFromRecentRequests(recentRequests, 60000);
   const ec2StateSummary = getEC2StateSummary(ec2Instances);
-  const legacyServers = mapLegacyServers(ec2Instances, traffic.byInstance, targetGroup);
+
+  // Fetch live /metrics from each EC2 private IP (best-effort, 2s timeout)
+  const enrichedInstances = await enrichWithInstanceMetrics(ec2Instances);
+
+  // Merge live requestCount into traffic map for dashboard display
+  enrichedInstances.forEach((instance) => {
+    if (instance.metricsRequestCount != null) {
+      const key = instance.instanceId;
+      if (!traffic.byInstance[key]) {
+        traffic.byInstance[key] = { instanceId: key, serverName: instance.name, requestCount: 0, requestRate: 0 };
+      }
+      traffic.byInstance[key].requestCount = instance.metricsRequestCount;
+    }
+  });
+
+  const legacyServers = mapLegacyServers(enrichedInstances, traffic.byInstance, targetGroup);
 
   const legacyMetrics = getLoadBalancingMetrics();
   const healthyFromTg = Number(targetGroup.healthyTargets || 0);
@@ -205,7 +255,7 @@ async function buildAwsPayload() {
   return {
     type: 'stats',
     timestamp: new Date().toISOString(),
-    ec2Instances,
+    ec2Instances: enrichedInstances,
     ec2StateSummary,
     targetGroup,
     loadBalancer,
