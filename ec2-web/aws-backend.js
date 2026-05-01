@@ -1,13 +1,14 @@
 'use strict';
 
 const http = require('http');
-const os = require('os');
+const os   = require('os');
 
-const port = parseInt(process.env.PORT || '3000', 10);
-const startedAt = new Date();
+const port       = 3000;
+const serverName = os.hostname();
+const startedAt  = new Date();
 let requestCount = 0;
 
-// ── IMDSv2 helper ──────────────────────────────────────────────────────────────
+// ── IMDSv2 helpers ─────────────────────────────────────────────────────────────
 
 function imdsRequest(options, body) {
   return new Promise((resolve, reject) => {
@@ -29,14 +30,14 @@ function imdsRequest(options, body) {
 async function getImdsToken() {
   return imdsRequest({
     path: '/latest/api/token', method: 'PUT',
-    headers: { 'X-aws-ec2-metadata-token-ttl-seconds': '21600' }
+    headers: { 'X-aws-ec2-metadata-token-ttl-seconds': '21600' },
   });
 }
 
 async function getImdsMeta(token, path) {
   return imdsRequest({
     path: `/latest/meta-data/${path}`, method: 'GET',
-    headers: { 'X-aws-ec2-metadata-token': token }
+    headers: { 'X-aws-ec2-metadata-token': token },
   });
 }
 
@@ -47,183 +48,494 @@ let cachedMeta = null;
 async function loadMetadata() {
   try {
     const token = await getImdsToken();
-    const [instanceId, az, localIpv4, publicIpv4, region] = await Promise.all([
+    const [instanceId, az, localIpv4] = await Promise.all([
       getImdsMeta(token, 'instance-id'),
       getImdsMeta(token, 'placement/availability-zone'),
       getImdsMeta(token, 'local-ipv4'),
-      getImdsMeta(token, 'public-ipv4').catch(() => 'not-available'),
-      getImdsMeta(token, 'placement/region').catch(() => 'unknown-region'),
     ]);
-    cachedMeta = { instanceId, availabilityZone: az, localIpv4, publicIpv4, region };
-    console.log(`[aws-backend] EC2 metadata loaded: ${instanceId} @ ${az}`);
+    cachedMeta = { instanceId, az, localIpv4 };
+    console.log(`[aws-backend] metadata: ${instanceId} @ ${az}`);
   } catch {
     cachedMeta = null;
-    console.log('[aws-backend] Not running on EC2 — using env/hostname fallback');
+    console.log('[aws-backend] not on EC2 — using hostname fallback');
   }
 }
 
-function meta() {
+function getMeta() {
   const m = cachedMeta || {};
   return {
-    instanceId: m.instanceId || process.env.INSTANCE_ID || os.hostname(),
-    availabilityZone: m.availabilityZone || process.env.AVAILABILITY_ZONE || 'unknown-az',
-    localIpv4: m.localIpv4 || process.env.LOCAL_IPV4 || 'unknown-ip',
-    publicIpv4: m.publicIpv4 || process.env.PUBLIC_IPV4 || 'not-exposed',
-    region: m.region || process.env.AWS_REGION || 'unknown-region',
-    hostname: os.hostname(),
-    imdsSource: cachedMeta ? 'ec2-imdsv2' : 'env-fallback',
+    instanceId: m.instanceId || serverName,
+    az:         m.az         || 'unknown',
+    localIpv4:  m.localIpv4  || 'unknown',
   };
 }
 
-// ── HTML renderer ──────────────────────────────────────────────────────────────
+// ── HTML ───────────────────────────────────────────────────────────────────────
 
-function renderHtml(m) {
+function renderHtml() {
+  const m    = getMeta();
+  const zone = m.az;
+  const now  = new Date().toISOString();
+
   return `<!DOCTYPE html>
-<html lang="en">
+<html lang="vi">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>EC2 Backend — ${m.instanceId}</title>
+  <title>${serverName} | Personal Profile Demo</title>
   <style>
-    :root {
-      --bg: #0d1117; --panel: #161b22; --border: #30363d;
-      --text: #e6edf3; --muted: #8b949e; --green: #3fb950;
-      --blue: #58a6ff; --accent: #238636;
+    :root{
+      --bg:#edf4fc;
+      --panel:#ffffff;
+      --panel-2:#f6f9fd;
+      --soft:#edf3fb;
+      --text:#0f172a;
+      --muted:#5b6b86;
+      --line:rgba(15,23,42,.08);
+      --accent:#0bf52a;
+      --accent-2:#60a5fa;
+      --shadow:0 18px 40px rgba(15,23,42,.08);
+      --radius:22px;
     }
-    * { box-sizing: border-box; margin: 0; padding: 0; }
-    body {
-      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-      background: var(--bg); color: var(--text);
-      min-height: 100vh; display: flex; align-items: center; justify-content: center;
-      padding: 24px;
+    *{box-sizing:border-box}
+    html,body{margin:0;padding:0;font-family:Inter,Arial,sans-serif}
+    body{
+      min-height:100vh;
+      color:var(--text);
+      background:
+        radial-gradient(circle at top right,rgba(96,165,250,.08),transparent 22%),
+        radial-gradient(circle at bottom left,rgba(45,212,191,.08),transparent 22%),
+        linear-gradient(135deg,#eef5fc,#f8fbff,#edf4ff);
     }
-    .card {
-      background: var(--panel); border: 1px solid var(--border);
-      border-radius: 12px; padding: 32px; max-width: 620px; width: 100%;
-      box-shadow: 0 8px 32px rgba(0,0,0,0.4);
+    body.dark{
+      --bg:#081120;
+      --panel:#101a2d;
+      --panel-2:#16233b;
+      --soft:#1d2b47;
+      --text:#eef4ff;
+      --muted:#9db0d0;
+      --line:rgba(255,255,255,.08);
+      --shadow:0 20px 50px rgba(0,0,0,.35);
+      background:
+        radial-gradient(circle at top right,rgba(96,165,250,.12),transparent 22%),
+        radial-gradient(circle at bottom left,rgba(45,212,191,.10),transparent 22%),
+        linear-gradient(135deg,#07101d,#0b1526,#0d1a2e);
     }
-    .badge {
-      display: inline-flex; align-items: center; gap: 6px;
-      background: rgba(63,185,80,0.15); border: 1px solid rgba(63,185,80,0.4);
-      color: var(--green); border-radius: 999px; padding: 4px 12px;
-      font-size: 12px; font-weight: 700; letter-spacing: 0.05em;
-      text-transform: uppercase; margin-bottom: 20px;
+    body.dark .hero,body.dark .panel,body.dark .card,
+    body.dark .info-item,body.dark .about-box,
+    body.dark .timeline-item,body.dark .contact-card{
+      background:rgba(255,255,255,.04);
     }
-    .dot {
-      width: 8px; height: 8px; border-radius: 50%;
-      background: var(--green); box-shadow: 0 0 6px var(--green);
-      animation: pulse 2s infinite;
+    .container{max-width:1200px;margin:0 auto;padding:24px}
+    .hero{
+      background:rgba(255,255,255,.7);
+      border:1px solid var(--line);
+      border-radius:28px;
+      box-shadow:var(--shadow);
+      overflow:hidden;
+      backdrop-filter:blur(8px);
     }
-    @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.4} }
-    h1 { font-size: 24px; font-weight: 700; margin-bottom: 6px; }
-    .sub { color: var(--muted); font-size: 14px; margin-bottom: 24px; }
-    .grid {
-      display: grid; grid-template-columns: 1fr 1fr; gap: 12px;
+    .hero-top{
+      padding:28px 28px 18px;
+      display:flex;
+      justify-content:space-between;
+      gap:16px;
+      align-items:flex-start;
+      flex-wrap:wrap;
     }
-    .stat {
-      background: var(--bg); border: 1px solid var(--border);
-      border-radius: 8px; padding: 14px;
+    .badge{
+      display:inline-flex;
+      align-items:center;
+      gap:10px;
+      background:var(--accent);
+      color:#fff;
+      font-weight:800;
+      padding:10px 16px;
+      border-radius:999px;
+      margin-bottom:16px;
+      box-shadow:0 10px 20px rgba(0,0,0,.08);
     }
-    .stat-label { font-size: 11px; font-weight: 700; color: var(--muted);
-      text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: 6px; }
-    .stat-value { font-size: 16px; font-weight: 600; font-family: monospace;
-      color: var(--blue); word-break: break-all; }
-    .stat-value.green { color: var(--green); }
-    .req-count { font-size: 28px; font-weight: 800; color: var(--green); }
-    .footer { margin-top: 20px; font-size: 12px; color: var(--muted);
-      border-top: 1px solid var(--border); padding-top: 16px;
-      display: flex; justify-content: space-between; }
+    .pulse{
+      width:10px;height:10px;border-radius:50%;
+      background:#fff;opacity:.9;
+      animation:blink 2s infinite;
+    }
+    @keyframes blink{0%,100%{opacity:.9}50%{opacity:.3}}
+    h1{margin:0 0 10px;font-size:42px;line-height:1.05}
+    .hero-actions{display:flex;gap:10px;flex-wrap:wrap}
+    button{
+      border:0;border-radius:14px;padding:12px 16px;
+      font-size:14px;font-weight:700;cursor:pointer;transition:.2s ease;
+    }
+    button:hover{transform:translateY(-1px);opacity:.96}
+    .btn-primary{background:var(--accent);color:#fff}
+    .btn-dark{background:transparent;color:var(--text);border:1px solid var(--line)}
+    .metrics{
+      display:grid;grid-template-columns:repeat(4,1fr);
+      gap:16px;padding:0 28px 28px;
+    }
+    .card{
+      background:var(--panel);border:1px solid var(--line);
+      border-radius:20px;padding:18px;
+    }
+    .label{color:var(--muted);font-size:13px;margin-bottom:8px}
+    .value{font-size:24px;font-weight:800}
+    .main-grid{
+      margin-top:18px;display:grid;
+      grid-template-columns:1.1fr .9fr;gap:18px;
+    }
+    .panel{
+      background:var(--panel);border:1px solid var(--line);
+      border-radius:24px;box-shadow:var(--shadow);padding:22px;
+    }
+    .panel h2{margin:0 0 14px;font-size:22px}
+    .muted{color:var(--muted);line-height:1.7}
+    .profile-hero{
+      display:grid;grid-template-columns:120px 1fr;
+      gap:18px;align-items:center;
+    }
+    .avatar{
+      width:120px;height:120px;border-radius:28px;
+      background:linear-gradient(135deg,var(--accent),var(--accent-2));
+      display:flex;align-items:center;justify-content:center;
+      font-size:42px;font-weight:900;color:#fff;box-shadow:var(--shadow);
+    }
+    .profile-name{font-size:32px;font-weight:900;margin:0 0 6px}
+    .profile-sub{color:var(--muted);margin:0 0 12px;font-size:15px;line-height:1.7}
+    .chips{display:flex;flex-wrap:wrap;gap:10px;margin-top:8px}
+    .chip{
+      padding:9px 12px;border-radius:999px;
+      background:var(--soft);border:1px solid var(--line);
+      color:var(--text);font-size:13px;font-weight:700;
+    }
+    .info-grid{
+      margin-top:18px;display:grid;
+      grid-template-columns:repeat(2,1fr);gap:14px;
+    }
+    .info-item{
+      background:var(--panel-2);border:1px solid var(--line);
+      border-radius:18px;padding:16px;
+    }
+    .info-title{font-size:13px;color:var(--muted);margin-bottom:8px}
+    .info-value{font-size:20px;font-weight:800;line-height:1.5}
+    .action-row{display:flex;flex-wrap:wrap;gap:10px;margin-top:18px}
+    .action-btn{background:transparent;color:var(--text);border:1px solid var(--line)}
+    .action-btn.active{background:var(--accent);color:#fff;border-color:transparent}
+    .about-box{
+      margin-top:18px;background:var(--panel-2);border:1px solid var(--line);
+      border-radius:18px;padding:18px;line-height:1.8;color:var(--muted);
+    }
+    .side-stack{display:grid;gap:18px}
+    .skill-list{display:grid;gap:14px}
+    .skill-top{
+      display:flex;justify-content:space-between;
+      font-size:14px;margin-bottom:6px;color:var(--muted);
+    }
+    .bar{height:12px;border-radius:999px;background:rgba(100,116,139,.15);overflow:hidden}
+    .fill{
+      height:100%;border-radius:999px;
+      background:linear-gradient(90deg,var(--accent),var(--accent-2));
+    }
+    .timeline{display:grid;gap:14px;margin-top:8px}
+    .timeline-item{
+      padding:14px 14px 14px 16px;
+      border-left:3px solid var(--accent);
+      background:var(--panel-2);border-radius:0 16px 16px 0;
+    }
+    .timeline-title{font-weight:800;margin-bottom:6px}
+    .timeline-desc{color:var(--muted);line-height:1.65;font-size:14px}
+    .contact-list{display:grid;gap:12px}
+    .contact-card{
+      background:var(--panel-2);border:1px solid var(--line);
+      border-radius:16px;padding:14px;
+    }
+    .contact-label{font-size:12px;color:var(--muted);margin-bottom:6px}
+    .contact-value{font-size:16px;font-weight:700;line-height:1.6;word-break:break-word}
+    .contact-value a{color:inherit;text-decoration:none}
+    .contact-value a:hover{text-decoration:underline}
+    .footer{margin-top:18px;text-align:center;color:var(--muted);font-size:14px}
+    @media(max-width:980px){
+      .metrics{grid-template-columns:repeat(2,1fr)}
+      .main-grid{grid-template-columns:1fr}
+      h1{font-size:34px}
+      .profile-hero{grid-template-columns:1fr}
+    }
+    @media(max-width:560px){
+      .container{padding:14px}
+      .hero-top,.metrics{padding-left:16px;padding-right:16px}
+      .metrics{grid-template-columns:1fr;padding-bottom:16px}
+      .info-grid{grid-template-columns:1fr}
+      h1{font-size:28px}
+      .profile-name{font-size:26px}
+    }
   </style>
 </head>
 <body>
-  <div class="card">
-    <div class="badge"><span class="dot"></span> Healthy — Port ${port}</div>
-    <h1>EC2 Instance Backend</h1>
-    <p class="sub">AWS Auto Scaling Group · Application Load Balancer</p>
-    <div class="grid">
-      <div class="stat">
-        <div class="stat-label">Instance ID</div>
-        <div class="stat-value">${m.instanceId}</div>
+  <div class="container">
+    <section class="hero">
+      <div class="hero-top">
+        <div>
+          <div class="badge">
+            <span class="pulse"></span>
+            Serving from ${serverName}
+          </div>
+          <h1>${serverName} — EC2 Backend</h1>
+        </div>
+        <div class="hero-actions">
+          <button class="btn-primary" onclick="location.reload()">Refresh</button>
+          <button class="btn-dark" onclick="toggleTheme()">Đổi theme</button>
+          <button class="btn-dark" onclick="showWelcome()">Demo action</button>
+        </div>
       </div>
-      <div class="stat">
-        <div class="stat-label">Availability Zone</div>
-        <div class="stat-value green">${m.availabilityZone}</div>
+
+      <div class="metrics">
+        <div class="card">
+          <div class="label">Server Name</div>
+          <div class="value" style="font-size:18px;word-break:break-all">${serverName}</div>
+        </div>
+        <div class="card">
+          <div class="label">Zone</div>
+          <div class="value" style="font-size:18px">${zone}</div>
+        </div>
+        <div class="card">
+          <div class="label">Request Count</div>
+          <div class="value" style="color:var(--accent)">${requestCount}</div>
+        </div>
+        <div class="card">
+          <div class="label">Current Time</div>
+          <div class="value" id="clock" style="font-size:16px">--:--:--</div>
+        </div>
       </div>
-      <div class="stat">
-        <div class="stat-label">Private IPv4</div>
-        <div class="stat-value">${m.localIpv4}</div>
+    </section>
+
+    <section class="main-grid">
+      <div class="panel">
+        <div class="profile-hero">
+          <div class="avatar">QH</div>
+          <div>
+            <div class="profile-name">Nguyen Quang Huy</div>
+            <p class="profile-sub">
+              qhuyy0901 • Sinh viên CNTT / Network.<br/>
+              MSSV: 2380614932 • Lớp: 23DTHA4 • Khoa Công nghệ thông tin.<br/>
+              Hiện tại mình đang thực hiện đồ án cơ sở về Intelligent Load Balancer trên AWS, triển khai nhiều EC2 server, target group và theo dõi phân phối traffic.
+            </p>
+            <div class="chips">
+              <span class="chip">Từ Quy Nhơn</span>
+              <span class="chip">HUTECH</span>
+              <span class="chip">Đang học CCNA</span>
+              <span class="chip">Tìm hiểu MCSA</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="info-grid">
+          <div class="info-item">
+            <div class="info-title">GitHub</div>
+            <div class="info-value">qhuyy0901</div>
+          </div>
+          <div class="info-item">
+            <div class="info-title">Học tập</div>
+            <div class="info-value">HUTECH</div>
+          </div>
+          <div class="info-item">
+            <div class="info-title">Hướng học hiện tại</div>
+            <div class="info-value">CCNA, MCSA, AWS cơ bản</div>
+          </div>
+          <div class="info-item">
+            <div class="info-title">Khu vực</div>
+            <div class="info-value">TP. Hồ Chí Minh</div>
+          </div>
+          <div class="info-item">
+            <div class="info-title">Đến từ</div>
+            <div class="info-value">Bình Định (Gia Lai NEW)</div>
+          </div>
+          <div class="info-item">
+            <div class="info-title">MSSV</div>
+            <div class="info-value">2380614932</div>
+          </div>
+          <div class="info-item">
+            <div class="info-title">Lớp</div>
+            <div class="info-value">23DTHA4</div>
+          </div>
+          <div class="info-item">
+            <div class="info-title">Khoa</div>
+            <div class="info-value">Công nghệ thông tin</div>
+          </div>
+          <div class="info-item">
+            <div class="info-title">Đồ án hiện tại</div>
+            <div class="info-value">Đồ án cơ sở Intelligent Load Balancer</div>
+          </div>
+          <div class="info-item">
+            <div class="info-title">Đồng đội</div>
+            <div class="info-value">Anh Trai: Đoàn Trọng Nghĩa</div>
+          </div>
+        </div>
+
+        <div class="action-row">
+          <button class="action-btn active" onclick="setStatus('Sẵn sàng demo',this)">Set Ready</button>
+          <button class="action-btn" onclick="setStatus('Đang trình bày',this)">Presenting</button>
+          <button class="action-btn" onclick="setStatus('Đang cập nhật',this)">Updating</button>
+          <button class="action-btn" onclick="setStatus('Nghỉ giải lao',this)">Break</button>
+        </div>
+
+        <div class="about-box">
+          <strong style="color:var(--text)">Giới thiệu ngắn</strong><br/>
+          Mình là Nguyễn Quang Huy, sinh viên khoa Công nghệ thông tin. Hiện tại mình đang học và thực hành các nội dung liên quan đến web cơ bản, hệ thống mạng và triển khai demo trên AWS.
+          <br/><br/>
+          Mục tiêu của mình là hiểu rõ cách hoạt động của EC2, Load Balancer, Target Group, health check và cách đưa một ứng dụng nhỏ lên môi trường thật để kiểm thử và trình bày đồ án.
+          <br/><br/>
+          Đây là phần web hồ sơ cá nhân đơn giản được tích hợp vào backend EC2 để khi request đi qua Load Balancer có thể hiển thị giao diện trực quan hơn, dễ quan sát hơn trong lúc demo.
+          <br/><br/>
+          <strong style="color:var(--text)">Trạng thái hiện tại:</strong>
+          <span id="demoStatus">Sẵn sàng demo</span>
+        </div>
       </div>
-      <div class="stat">
-        <div class="stat-label">Region</div>
-        <div class="stat-value">${m.region}</div>
+
+      <div class="side-stack">
+        <div class="panel">
+          <h2>Kỹ năng nổi bật</h2>
+          <div class="skill-list">
+            <div>
+              <div class="skill-top"><span>HTML / CSS / JavaScript</span><span>38%</span></div>
+              <div class="bar"><div class="fill" style="width:38%"></div></div>
+            </div>
+            <div>
+              <div class="skill-top"><span>AWS / EC2 / ALB</span><span>34%</span></div>
+              <div class="bar"><div class="fill" style="width:34%"></div></div>
+            </div>
+            <div>
+              <div class="skill-top"><span>Networking / Monitoring</span><span>36%</span></div>
+              <div class="bar"><div class="fill" style="width:36%"></div></div>
+            </div>
+            <div>
+              <div class="skill-top"><span>Node.js</span><span>32%</span></div>
+              <div class="bar"><div class="fill" style="width:32%"></div></div>
+            </div>
+          </div>
+        </div>
+
+        <div class="panel">
+          <h2>Thông tin liên hệ</h2>
+          <div class="contact-list">
+            <div class="contact-card">
+              <div class="contact-label">Email</div>
+              <div class="contact-value">qhuyy0901@gmail.com</div>
+            </div>
+            <div class="contact-card">
+              <div class="contact-label">Địa chỉ</div>
+              <div class="contact-value">Phạm Hùng, Xã Bình Hưng, TP. Hồ Chí Minh</div>
+            </div>
+            <div class="contact-card">
+              <div class="contact-label">GitHub Project</div>
+              <div class="contact-value">
+                <a href="https://github.com/qhuyy0901/IntelligentLoadBalancer_Network.git" target="_blank">
+                  github.com/qhuyy0901/IntelligentLoadBalancer_Network
+                </a>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="panel">
+          <h2>Định hướng học tập</h2>
+          <div class="timeline">
+            <div class="timeline-item">
+              <div class="timeline-title">Củng cố nền tảng mạng</div>
+              <div class="timeline-desc">
+                Tiếp tục học CCNA để hiểu kỹ hơn về routing, switching, subnetting và cách vận hành hệ thống mạng.
+              </div>
+            </div>
+            <div class="timeline-item">
+              <div class="timeline-title">Tìm hiểu hệ thống Windows Server</div>
+              <div class="timeline-desc">
+                Làm quen thêm với MCSA và các nội dung liên quan đến quản trị hệ thống ở mức cơ bản.
+              </div>
+            </div>
+            <div class="timeline-item">
+              <div class="timeline-title">Hoàn thiện đồ án cơ sở</div>
+              <div class="timeline-desc">
+                Tập trung hoàn thiện demo Load Balancer trên AWS, kết hợp nhiều EC2 backend, dashboard monitoring và phần giao diện hiển thị trực quan hơn.
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="panel">
+          <h2>Response Source</h2>
+          <div class="muted">Server hiện tại đang phục vụ request:</div>
+          <div style="margin-top:10px;font-size:26px;font-weight:900">${serverName} / port ${port}</div>
+          <div style="margin-top:8px;font-size:13px;color:var(--muted)">
+            Instance: ${m.instanceId} &nbsp;|&nbsp; IP: ${m.localIpv4}
+          </div>
+        </div>
       </div>
-      <div class="stat">
-        <div class="stat-label">Hostname</div>
-        <div class="stat-value">${m.hostname}</div>
-      </div>
-      <div class="stat">
-        <div class="stat-label">Request Count</div>
-        <div class="stat-value req-count" id="rc">${requestCount}</div>
-      </div>
-    </div>
+    </section>
+
     <div class="footer">
-      <span>Started: ${startedAt.toISOString()}</span>
-      <span>Source: ${m.imdsSource}</span>
+      Demo đồ án cơ sở • AWS Load Balancer • ${serverName}
     </div>
   </div>
+
+  <script>
+    const clockEl    = document.getElementById('clock');
+    const statusEl   = document.getElementById('demoStatus');
+
+    function updateClock() {
+      clockEl.textContent = new Date().toLocaleString('vi-VN');
+    }
+    function toggleTheme() {
+      document.body.classList.toggle('dark');
+    }
+    function showWelcome() {
+      alert('Xin chào, đây là hồ sơ cá nhân demo từ ${serverName}');
+    }
+    function setStatus(text, el) {
+      statusEl.textContent = text;
+      document.querySelectorAll('.action-btn').forEach(b => b.classList.remove('active'));
+      el.classList.add('active');
+    }
+    updateClock();
+    setInterval(updateClock, 1000);
+  </script>
 </body>
 </html>`;
 }
 
-// ── HTTP Server ────────────────────────────────────────────────────────────────
+// ── HTTP server ────────────────────────────────────────────────────────────────
 
 const server = http.createServer((req, res) => {
   const url = req.url.split('?')[0];
 
   if (url === '/health') {
-    const m = meta();
     res.writeHead(200, { 'Content-Type': 'application/json' });
-    res.end(JSON.stringify({
-      status: 'ok',
-      instanceId: m.instanceId,
-      availabilityZone: m.availabilityZone,
-      uptimeSeconds: Math.floor(process.uptime()),
-      port,
-    }));
+    res.end(JSON.stringify({ status: 'ok' }));
     return;
   }
 
   if (url === '/metrics') {
-    const m = meta();
     res.writeHead(200, {
       'Content-Type': 'application/json',
       'Access-Control-Allow-Origin': '*',
     });
     res.end(JSON.stringify({
-      instanceId: m.instanceId,
-      availabilityZone: m.availabilityZone,
-      localIpv4: m.localIpv4,
-      region: m.region,
-      port,
-      uptimeSeconds: Math.floor(process.uptime()),
-      requestCount,
-      startedAt: startedAt.toISOString(),
+      serverName,
+      requests: requestCount,
+      uptime: Math.floor(process.uptime()),
     }));
     return;
   }
 
-  // All other routes → increment counter + serve HTML
+  // All other routes — count + serve HTML
   requestCount += 1;
   res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
-  res.end(renderHtml(meta()));
+  res.end(renderHtml());
 });
 
 // ── Start ──────────────────────────────────────────────────────────────────────
 
 loadMetadata().finally(() => {
   server.listen(port, '0.0.0.0', () => {
-    const m = meta();
-    console.log(`[aws-backend] listening on :${port}`);
-    console.log(`[aws-backend] instanceId=${m.instanceId}  az=${m.availabilityZone}  source=${m.imdsSource}`);
+    console.log(`[aws-backend] ${serverName} listening on :${port}`);
+    console.log(`[aws-backend] zone=${getMeta().az}`);
   });
 });

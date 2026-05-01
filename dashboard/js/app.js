@@ -64,6 +64,7 @@ if (generateBtn) {
 let serverSnapshot = {};
 let latestAwsPayload = null;
 let albTrafficUrl = null; // set from first WS payload
+window.albTrafficUrl = null; // shared with traffic.js
 
 function formatMetricCount(value) {
   return `${Math.round(Number(value || 0))}`;
@@ -394,6 +395,7 @@ window.addEventListener('lb-stats', (e) => {
   const albDns = payload.loadBalancer?.dnsName;
   if (albDns && !albTrafficUrl) {
     albTrafficUrl = `http://${albDns}`;
+    window.albTrafficUrl = albTrafficUrl; // share with traffic.js
   }
 
   renderServerTable(payload);

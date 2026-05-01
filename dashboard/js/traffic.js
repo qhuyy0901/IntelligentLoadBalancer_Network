@@ -280,8 +280,11 @@ function setupActions() {
       generateBtn.disabled = true;
       generateBtn.textContent = 'Generating...';
 
-      const tasks = Array.from({ length: 20 }, (_, index) =>
-        new Promise((resolve) => setTimeout(() => fetch(`http://${window.location.hostname}:8000`).catch(() => null).finally(resolve), index * 120))
+      // Use ALB URL shared from app.js, fallback to env-configured ALB
+      const albUrl = window.albTrafficUrl || 'http://my-alb-2056764661.ap-southeast-2.elb.amazonaws.com';
+
+      const tasks = Array.from({ length: 30 }, (_, index) =>
+        new Promise((resolve) => setTimeout(() => fetch(albUrl, { mode: 'no-cors' }).catch(() => null).finally(resolve), index * 80))
       );
 
       await Promise.all(tasks);
