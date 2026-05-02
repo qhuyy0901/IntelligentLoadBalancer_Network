@@ -1,5 +1,13 @@
 
 
+const path = require('path');
+const dotenv = require('dotenv');
+
+// ── Load .env TRƯỚC mọi thứ khác ─────────────────────────────────────────────
+dotenv.config({ path: path.join(__dirname, '..', '.env') });
+
+const ENABLE_AWS = process.env.ENABLE_AWS === 'true';
+
 const http = require('http');
 const httpProxy = require('http-proxy');    // Thư viện proxy HTTP — chuyển tiếp request đến backend
 const config = require('../config/servers.json'); // Cấu hình trung tâm: port, thuật toán, danh sách server
@@ -21,7 +29,12 @@ const {
 const { startHealthChecks } = require('./healthCheck');
 const { logRequest, logFailure, getRates, getRecentRequests, getLoadBalancingMetrics } = require('./logger');
 const { startWebSocketServer } = require('./wsServer');
-const { startAutoScalingLoop } = require('./autoScaling');
+
+// ── AutoScaling: chỉ import khi ENABLE_AWS=true ──────────────────────────────
+let startAutoScalingLoop;
+if (ENABLE_AWS) {
+  ({ startAutoScalingLoop } = require('./autoScaling'));
+}
 
 // Cổng Load Balancer — lấy từ config, mặc định 3000 nếu không có
 const LB_PORT = config.loadBalancer.port || 3000;
@@ -93,6 +106,12 @@ const server = http.createServer((req, res) => {
   // ── API nhận log từ EC2 backend khi traffic đến qua AWS ALB ───────────
   // EC2 gọi POST /lb/aws-log sau mỗi request thật để dashboard cập nhật
   if (req.url === '/lb/aws-log' && req.method === 'POST') {
+    // Chỉ xử lý AWS log khi ENABLE_AWS=true
+    if (!ENABLE_AWS) {
+      res.writeHead(403, { 'Content-Type': 'application/json' });
+      return res.end(JSON.stringify({ error: 'AWS is disabled' }));
+    }
+
     let body = '';
     req.on('data', chunk => { body += chunk; });
     req.on('end', () => {
@@ -218,8 +237,14 @@ const server = http.createServer((req, res) => {
 // ── KHỞI ĐỘNG HỆ THỐNG ──────────────────────────────────────────────────
 server.listen(LB_PORT, '0.0.0.0', () => {
   console.log(`🚀 LB running at http://0.0.0.0:${LB_PORT}`);
+  console.log(`📦 Mode: ${ENABLE_AWS ? 'AWS' : 'LOCAL'}`);
 });
 
 startHealthChecks();      // Bắt đầu kiểm tra sức khỏe server mỗi 5 giây
 startWebSocketServer();   // Bắt đầu WebSocket server phát dữ liệu cho Dashboard
-startAutoScalingLoop();   // Mô phỏng Auto Scaling: tăng/giảm số EC2 đang tham gia pool
+
+if (ENABLE_AWS) {
+  startAutoScalingLoop(); // Mô phỏng Auto Scaling: tăng/giảm số EC2 đang tham gia pool
+} else {
+  console.log('☁️  AWS OFF — running in local mode (no AWS SDK, no AutoScaling)');
+}

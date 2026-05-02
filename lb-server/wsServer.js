@@ -2,15 +2,24 @@ const path = require('path');
 const dotenv = require('dotenv');
 const WebSocket = require('ws');
 const config = require('../config/servers.json');
-const { getAlgorithm } = require('./balancer');
+const { getAlgorithm, getServerStates } = require('./balancer');
 const { getRates, getRecentRequests, getLoadBalancingMetrics } = require('./logger');
 const { getAutoScalingState } = require('./autoScaling');
-const { getEC2Instances, getEC2StateSummary } = require('../aws/ec2');
-const { getTargetGroupAndLoadBalancer } = require('../aws/elb');
-const { getAutoScalingSnapshot } = require('../aws/autoscaling');
-const { getCloudWatchSnapshot } = require('../aws/cloudwatch');
 
 dotenv.config({ path: path.join(__dirname, '..', '.env') });
+
+const ENABLE_AWS = process.env.ENABLE_AWS === 'true';
+
+// ── AWS modules: chỉ import khi ENABLE_AWS=true ──────────────────────────────
+let getEC2Instances, getEC2StateSummary, getTargetGroupAndLoadBalancer,
+    getAutoScalingSnapshot, getCloudWatchSnapshot;
+
+if (ENABLE_AWS) {
+  ({ getEC2Instances, getEC2StateSummary } = require('../aws/ec2'));
+  ({ getTargetGroupAndLoadBalancer } = require('../aws/elb'));
+  ({ getAutoScalingSnapshot } = require('../aws/autoscaling'));
+  ({ getCloudWatchSnapshot } = require('../aws/cloudwatch'));
+}
 
 let wss;
 let isPolling = false;
@@ -285,14 +294,66 @@ async function buildAwsPayload() {
   };
 }
 
+// ── LOCAL MODE payload — không gọi AWS, chỉ dùng dữ liệu local ─────────────
+function buildLocalPayload() {
+  const states = getServerStates();
+  const recentRequests = getRecentRequests(200).map((request) => ({
+    time: request.time,
+    clientIp: request.clientIp,
+    serverId: request.serverId,
+    serverName: request.serverName,
+    duration: request.duration
+  }));
+  const traffic = buildTrafficFromRecentRequests(recentRequests, 60000);
+  const metrics = getLoadBalancingMetrics();
+
+  // Build servers array from local config + states
+  const colorPalette = ['#2dd4bf', '#3b82f6', '#f59e0b', '#f43f5e', '#22c55e', '#8b5cf6'];
+  const servers = config.servers.map((s, i) => {
+    const st = states[s.id] || {};
+    return {
+      id: s.id,
+      name: s.name || s.id,
+      domain: s.host || 'localhost',
+      color: colorPalette[i % colorPalette.length],
+      port: s.port || 3000,
+      enabled: s.enabled !== false,
+      status: st.status || 'unknown',
+      requestCount: st.requestCount || 0,
+      activeConnections: st.activeConnections || 0,
+      rps: (traffic.byInstance[s.id] || {}).requestRate || 0
+    };
+  });
+
+  return {
+    type: 'stats',
+    timestamp: new Date().toISOString(),
+    algorithm: getAlgorithm(),
+    recentRequests,
+    servers,
+    traffic,
+    metrics,
+    simulatedAutoScaling: getAutoScalingState(),
+    localRates: getRates(),
+    // Các field AWS để trống — dashboard sẽ không hiển thị panel AWS
+    ec2Instances: [],
+    ec2StateSummary: { total: 0, running: 0, stopped: 0 },
+    targetGroup: {},
+    loadBalancer: {},
+    autoScaling: {},
+    cloudWatch: {},
+    awsErrors: []
+  };
+}
+
 async function broadcastStats() {
   if (!wss || wss.clients.size === 0) return;
   if (isPolling) return;
   isPolling = true;
 
   try {
-    const payload = await buildAwsPayload();
-    logAwsErrors(payload.awsErrors);
+    const payload = ENABLE_AWS ? await buildAwsPayload() : buildLocalPayload();
+    if (ENABLE_AWS) logAwsErrors(payload.awsErrors);
     const data = JSON.stringify(payload);
 
     wss.clients.forEach((client) => {
@@ -301,7 +362,7 @@ async function broadcastStats() {
       }
     });
   } catch (error) {
-    console.error('[WebSocket] Failed to build AWS payload:', error.message || error);
+    console.error('[WebSocket] Failed to build payload:', error.message || error);
   } finally {
     isPolling = false;
   }
@@ -309,12 +370,15 @@ async function broadcastStats() {
 
 function startWebSocketServer() {
   const WS_PORT = config.loadBalancer.wsPort || 9090;
-  const POLL_MS = Math.max(3000, Math.min(5000, Number(process.env.AWS_POLL_INTERVAL_MS || 5000)));
+  const POLL_MS = ENABLE_AWS
+    ? Math.max(3000, Math.min(5000, Number(process.env.AWS_POLL_INTERVAL_MS || 5000)))
+    : 2000; // Local mode: poll nhanh hơn
 
   wss = new WebSocket.Server({ port: WS_PORT });
 
-  console.log(`[WebSocket] AWS realtime server ready at ws://localhost:${WS_PORT}`);
-  console.log(`[WebSocket] Polling AWS every ${POLL_MS}ms`);
+  const mode = ENABLE_AWS ? 'AWS' : 'LOCAL';
+  console.log(`[WebSocket] ${mode} realtime server ready at ws://localhost:${WS_PORT}`);
+  console.log(`[WebSocket] Polling every ${POLL_MS}ms (mode: ${mode})`);
 
   wss.on('connection', (ws) => {
     console.log('[WebSocket] Dashboard connected');
