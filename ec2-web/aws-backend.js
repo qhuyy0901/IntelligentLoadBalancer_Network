@@ -65,437 +65,439 @@ function getMeta() {
   const m = cachedMeta || {};
   return {
     instanceId: m.instanceId || serverName,
-    az:         m.az         || 'unknown',
-    localIpv4:  m.localIpv4  || 'unknown',
+    az:         m.az         || 'N/A',
+    localIpv4:  m.localIpv4  || '127.0.0.1 (Local)', 
   };
 }
 
 // ── HTML ───────────────────────────────────────────────────────────────────────
 
 function renderHtml() {
-  const m    = getMeta();
-  const zone = m.az;
-  const now  = new Date().toISOString();
+  const m = getMeta();
 
   return `<!DOCTYPE html>
 <html lang="vi">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>${serverName} | Personal Profile Demo</title>
+  <title>${serverName} | Intelligent Load Balancer</title>
   <style>
-    :root{
-      --bg:#edf4fc;
-      --panel:#ffffff;
-      --panel-2:#f6f9fd;
-      --soft:#edf3fb;
-      --text:#0f172a;
-      --muted:#5b6b86;
-      --line:rgba(15,23,42,.08);
-      --accent:#0bf52a;
-      --accent-2:#60a5fa;
-      --shadow:0 18px 40px rgba(15,23,42,.08);
-      --radius:22px;
+    :root {
+      --primary: #2563eb;
+      --primary-hover: #1d4ed8;
+      --bg: #f1f5f9;
+      --nav-bg: #ffffff;
+      --card-bg: #ffffff;
+      --text-main: #0f172a;
+      --text-muted: #64748b;
+      --border: #e2e8f0;
+      --accent: #10b981;
+      --accent-alt: #f59e0b;
+      --shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05), 0 2px 4px -1px rgba(0, 0, 0, 0.03);
+      --radius: 10px;
     }
-    *{box-sizing:border-box}
-    html,body{margin:0;padding:0;font-family:Inter,Arial,sans-serif}
-    body{
-      min-height:100vh;
-      color:var(--text);
-      background:
-        radial-gradient(circle at top right,rgba(96,165,250,.08),transparent 22%),
-        radial-gradient(circle at bottom left,rgba(45,212,191,.08),transparent 22%),
-        linear-gradient(135deg,#eef5fc,#f8fbff,#edf4ff);
+    body.dark {
+      --primary: #3b82f6;
+      --primary-hover: #60a5fa;
+      --bg: #0b1120;
+      --nav-bg: #1e293b;
+      --card-bg: #1e293b;
+      --text-main: #f8fafc;
+      --text-muted: #94a3b8;
+      --border: #334155;
+      --shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.5);
     }
-    body.dark{
-      --bg:#081120;
-      --panel:#101a2d;
-      --panel-2:#16233b;
-      --soft:#1d2b47;
-      --text:#eef4ff;
-      --muted:#9db0d0;
-      --line:rgba(255,255,255,.08);
-      --shadow:0 20px 50px rgba(0,0,0,.35);
-      background:
-        radial-gradient(circle at top right,rgba(96,165,250,.12),transparent 22%),
-        radial-gradient(circle at bottom left,rgba(45,212,191,.10),transparent 22%),
-        linear-gradient(135deg,#07101d,#0b1526,#0d1a2e);
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: var(--bg); color: var(--text-main); transition: background-color 0.3s; line-height: 1.5; }
+    
+    /* Navbar */
+    .navbar { background: var(--nav-bg); border-bottom: 1px solid var(--border); position: sticky; top: 0; z-index: 100; box-shadow: var(--shadow); }
+    .nav-container { max-width: 1000px; margin: 0 auto; display: flex; justify-content: space-between; align-items: center; padding: 0 20px; height: 64px; }
+    .logo { font-size: 18px; font-weight: 800; display: flex; align-items: center; gap: 8px; color: var(--primary); }
+    .pulse { width: 10px; height: 10px; border-radius: 50%; background: var(--accent); animation: blink 2s infinite; }
+    @keyframes blink { 0%, 100% { opacity: 1; } 50% { opacity: 0.3; } }
+    
+    .nav-tabs { display: flex; gap: 5px; height: 100%; }
+    .tab-btn { background: transparent; border: none; color: var(--text-muted); font-weight: 600; font-size: 14px; padding: 0 16px; cursor: pointer; transition: 0.2s; border-bottom: 3px solid transparent; height: 100%; }
+    .tab-btn:hover { color: var(--primary); background: rgba(0,0,0,0.02); }
+    .tab-btn.active { color: var(--primary); border-bottom-color: var(--primary); }
+    body.dark .tab-btn:hover { background: rgba(255,255,255,0.05); }
+
+    .nav-actions { display: flex; gap: 8px; }
+    .btn { padding: 6px 14px; border-radius: 6px; border: none; cursor: pointer; font-weight: 600; transition: 0.2s; font-size: 13px; }
+    .btn-outline { background: transparent; border: 1px solid var(--border); color: var(--text-main); }
+    .btn-outline:hover { border-color: var(--text-muted); }
+    .btn-primary { background: var(--primary); color: white; }
+    .btn-primary:hover { background: var(--primary-hover); }
+
+    /* Main Container - Thu hẹp lại để nội dung đậm đặc hơn */
+    .container { max-width: 1000px; margin: 24px auto; padding: 0 20px; }
+    .tab-content { display: none; animation: fadeIn 0.3s ease; }
+    .tab-content.active { display: block; }
+    @keyframes fadeIn { from { opacity: 0; transform: translateY(5px); } to { opacity: 1; transform: translateY(0); } }
+
+    /* Layouts */
+    .grid-2 { display: grid; grid-template-columns: repeat(2, 1fr); gap: 16px; }
+    .grid-3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; margin-bottom: 16px; }
+    .card { background: var(--card-bg); border: 1px solid var(--border); border-radius: var(--radius); padding: 18px; box-shadow: var(--shadow); }
+    .card-title { font-size: 16px; font-weight: bold; margin-bottom: 12px; border-bottom: 1px solid var(--border); padding-bottom: 8px; display: flex; justify-content: space-between; align-items: center; }
+    
+    /* Top Metrics Stats Cards */
+    .stat-card { text-align: center; padding: 16px; display: flex; flex-direction: column; justify-content: center; }
+    .metric-value { font-size: 28px; font-weight: 900; color: var(--primary); word-break: break-all; line-height: 1.2; margin-top: 4px; }
+    .metric-label { font-size: 12px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px; font-weight: 700; }
+
+    /* Bảng Key-Value cho Node Info (Tránh trống trải) */
+    .kv-list { display: flex; flex-direction: column; gap: 0; }
+    .kv-item { display: flex; justify-content: space-between; padding: 10px 0; border-bottom: 1px dashed var(--border); font-size: 14px; }
+    .kv-item:last-child { border-bottom: none; padding-bottom: 0; }
+    .kv-label { color: var(--text-muted); }
+    .kv-value { font-weight: 600; text-align: right; }
+
+    /* Info & Tools CSS */
+    .profile-header { display: flex; gap: 20px; align-items: center; margin-bottom: 20px; }
+    .avatar { width: 80px; height: 80px; border-radius: 50%; background: linear-gradient(135deg, var(--primary), #8b5cf6); color: white; display: flex; align-items: center; justify-content: center; font-size: 28px; font-weight: bold; }
+    .info-list { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+    .info-item { background: var(--bg); padding: 10px 14px; border-radius: 6px; border: 1px solid var(--border); }
+    .info-item span { display: block; font-size: 12px; color: var(--text-muted); margin-bottom: 2px; }
+    .info-item strong { display: block; font-size: 14px; }
+    .chip { display: inline-block; padding: 4px 10px; background: var(--bg); border: 1px solid var(--border); border-radius: 20px; font-size: 12px; margin: 0 4px 0 0; }
+
+    .tool-box { margin-bottom: 16px; }
+    .input-group { margin-bottom: 12px; }
+    .input-group label { display: block; margin-bottom: 6px; font-weight: 600; font-size: 13px; }
+    textarea, input { width: 100%; padding: 10px; border-radius: 6px; border: 1px solid var(--border); background: var(--bg); color: var(--text-main); font-family: inherit; resize: vertical; font-size: 13px; }
+    textarea:focus, input:focus { outline: none; border-color: var(--primary); }
+    .tool-result { background: var(--bg); border: 1px solid var(--border); padding: 12px; border-radius: 6px; min-height: 40px; margin-top: 8px; word-break: break-all; font-family: monospace; font-size: 13px; }
+    .flex-row { display: flex; gap: 8px; align-items: center; }
+
+    .roadmap-box { background: var(--bg); padding: 16px; border-radius: 8px; border: 1px solid var(--border); height: 100%; }
+    .roadmap-box h3 { display: flex; align-items: center; gap: 6px; margin-bottom: 10px; font-size: 15px; }
+    .roadmap-box ul { padding-left: 20px; color: var(--text-muted); font-size: 13px; margin-top: 6px; }
+    .roadmap-box li { margin-bottom: 4px; }
+
+    @media (max-width: 900px) {
+      .nav-container { flex-wrap: wrap; height: auto; padding: 8px 16px; justify-content: center; gap: 8px; }
+      .nav-tabs { width: 100%; overflow-x: auto; justify-content: center; }
+      .tab-btn { padding: 8px 12px; white-space: nowrap; }
     }
-    body.dark .hero,body.dark .panel,body.dark .card,
-    body.dark .info-item,body.dark .about-box,
-    body.dark .timeline-item,body.dark .contact-card{
-      background:rgba(255,255,255,.04);
-    }
-    .container{max-width:1200px;margin:0 auto;padding:24px}
-    .hero{
-      background:rgba(255,255,255,.7);
-      border:1px solid var(--line);
-      border-radius:28px;
-      box-shadow:var(--shadow);
-      overflow:hidden;
-      backdrop-filter:blur(8px);
-    }
-    .hero-top{
-      padding:28px 28px 18px;
-      display:flex;
-      justify-content:space-between;
-      gap:16px;
-      align-items:flex-start;
-      flex-wrap:wrap;
-    }
-    .badge{
-      display:inline-flex;
-      align-items:center;
-      gap:10px;
-      background:var(--accent);
-      color:#fff;
-      font-weight:800;
-      padding:10px 16px;
-      border-radius:999px;
-      margin-bottom:16px;
-      box-shadow:0 10px 20px rgba(0,0,0,.08);
-    }
-    .pulse{
-      width:10px;height:10px;border-radius:50%;
-      background:#fff;opacity:.9;
-      animation:blink 2s infinite;
-    }
-    @keyframes blink{0%,100%{opacity:.9}50%{opacity:.3}}
-    h1{margin:0 0 10px;font-size:42px;line-height:1.05}
-    .hero-actions{display:flex;gap:10px;flex-wrap:wrap}
-    button{
-      border:0;border-radius:14px;padding:12px 16px;
-      font-size:14px;font-weight:700;cursor:pointer;transition:.2s ease;
-    }
-    button:hover{transform:translateY(-1px);opacity:.96}
-    .btn-primary{background:var(--accent);color:#fff}
-    .btn-dark{background:transparent;color:var(--text);border:1px solid var(--line)}
-    .metrics{
-      display:grid;grid-template-columns:repeat(4,1fr);
-      gap:16px;padding:0 28px 28px;
-    }
-    .card{
-      background:var(--panel);border:1px solid var(--line);
-      border-radius:20px;padding:18px;
-    }
-    .label{color:var(--muted);font-size:13px;margin-bottom:8px}
-    .value{font-size:24px;font-weight:800}
-    .main-grid{
-      margin-top:18px;display:grid;
-      grid-template-columns:1.1fr .9fr;gap:18px;
-    }
-    .panel{
-      background:var(--panel);border:1px solid var(--line);
-      border-radius:24px;box-shadow:var(--shadow);padding:22px;
-    }
-    .panel h2{margin:0 0 14px;font-size:22px}
-    .muted{color:var(--muted);line-height:1.7}
-    .profile-hero{
-      display:grid;grid-template-columns:120px 1fr;
-      gap:18px;align-items:center;
-    }
-    .avatar{
-      width:120px;height:120px;border-radius:28px;
-      background:linear-gradient(135deg,var(--accent),var(--accent-2));
-      display:flex;align-items:center;justify-content:center;
-      font-size:42px;font-weight:900;color:#fff;box-shadow:var(--shadow);
-    }
-    .profile-name{font-size:32px;font-weight:900;margin:0 0 6px}
-    .profile-sub{color:var(--muted);margin:0 0 12px;font-size:15px;line-height:1.7}
-    .chips{display:flex;flex-wrap:wrap;gap:10px;margin-top:8px}
-    .chip{
-      padding:9px 12px;border-radius:999px;
-      background:var(--soft);border:1px solid var(--line);
-      color:var(--text);font-size:13px;font-weight:700;
-    }
-    .info-grid{
-      margin-top:18px;display:grid;
-      grid-template-columns:repeat(2,1fr);gap:14px;
-    }
-    .info-item{
-      background:var(--panel-2);border:1px solid var(--line);
-      border-radius:18px;padding:16px;
-    }
-    .info-title{font-size:13px;color:var(--muted);margin-bottom:8px}
-    .info-value{font-size:20px;font-weight:800;line-height:1.5}
-    .action-row{display:flex;flex-wrap:wrap;gap:10px;margin-top:18px}
-    .action-btn{background:transparent;color:var(--text);border:1px solid var(--line)}
-    .action-btn.active{background:var(--accent);color:#fff;border-color:transparent}
-    .about-box{
-      margin-top:18px;background:var(--panel-2);border:1px solid var(--line);
-      border-radius:18px;padding:18px;line-height:1.8;color:var(--muted);
-    }
-    .side-stack{display:grid;gap:18px}
-    .skill-list{display:grid;gap:14px}
-    .skill-top{
-      display:flex;justify-content:space-between;
-      font-size:14px;margin-bottom:6px;color:var(--muted);
-    }
-    .bar{height:12px;border-radius:999px;background:rgba(100,116,139,.15);overflow:hidden}
-    .fill{
-      height:100%;border-radius:999px;
-      background:linear-gradient(90deg,var(--accent),var(--accent-2));
-    }
-    .timeline{display:grid;gap:14px;margin-top:8px}
-    .timeline-item{
-      padding:14px 14px 14px 16px;
-      border-left:3px solid var(--accent);
-      background:var(--panel-2);border-radius:0 16px 16px 0;
-    }
-    .timeline-title{font-weight:800;margin-bottom:6px}
-    .timeline-desc{color:var(--muted);line-height:1.65;font-size:14px}
-    .contact-list{display:grid;gap:12px}
-    .contact-card{
-      background:var(--panel-2);border:1px solid var(--line);
-      border-radius:16px;padding:14px;
-    }
-    .contact-label{font-size:12px;color:var(--muted);margin-bottom:6px}
-    .contact-value{font-size:16px;font-weight:700;line-height:1.6;word-break:break-word}
-    .contact-value a{color:inherit;text-decoration:none}
-    .contact-value a:hover{text-decoration:underline}
-    .footer{margin-top:18px;text-align:center;color:var(--muted);font-size:14px}
-    @media(max-width:980px){
-      .metrics{grid-template-columns:repeat(2,1fr)}
-      .main-grid{grid-template-columns:1fr}
-      h1{font-size:34px}
-      .profile-hero{grid-template-columns:1fr}
-    }
-    @media(max-width:560px){
-      .container{padding:14px}
-      .hero-top,.metrics{padding-left:16px;padding-right:16px}
-      .metrics{grid-template-columns:1fr;padding-bottom:16px}
-      .info-grid{grid-template-columns:1fr}
-      h1{font-size:28px}
-      .profile-name{font-size:26px}
+    @media (max-width: 600px) {
+      .grid-2, .grid-3 { grid-template-columns: 1fr; gap: 12px; }
+      .info-list { grid-template-columns: 1fr; }
+      .profile-header { flex-direction: column; text-align: center; }
+      .kv-item { flex-direction: column; align-items: flex-start; gap: 4px; }
+      .kv-value { text-align: left; }
     }
   </style>
 </head>
 <body>
-  <div class="container">
-    <section class="hero">
-      <div class="hero-top">
-        <div>
-          <div class="badge">
-            <span class="pulse"></span>
-            Serving from ${serverName}
-          </div>
-          <h1>${serverName} — EC2 Backend</h1>
-        </div>
-        <div class="hero-actions">
-          <button class="btn-primary" onclick="location.reload()">Refresh</button>
-          <button class="btn-dark" onclick="toggleTheme()">Đổi theme</button>
-          <button class="btn-dark" onclick="showWelcome()">Demo action</button>
-        </div>
+  
+  <nav class="navbar">
+    <div class="nav-container">
+      <div class="logo"><span class="pulse"></span> ALB Demo</div>
+      <div class="nav-tabs">
+        <button class="tab-btn active" onclick="switchTab('tab-system')">System Monitor</button>
+        <button class="tab-btn" onclick="switchTab('tab-profile')">Hồ sơ cá nhân</button>
+        <button class="tab-btn" onclick="switchTab('tab-tools')">Công cụ Test</button>
       </div>
-
-      <div class="metrics">
-        <div class="card">
-          <div class="label">Server Name</div>
-          <div class="value" style="font-size:18px;word-break:break-all">${serverName}</div>
-        </div>
-        <div class="card">
-          <div class="label">Zone</div>
-          <div class="value" style="font-size:18px">${zone}</div>
-        </div>
-        <div class="card">
-          <div class="label">Request Count</div>
-          <div class="value" style="color:var(--accent)">${requestCount}</div>
-        </div>
-        <div class="card">
-          <div class="label">Current Time</div>
-          <div class="value" id="clock" style="font-size:16px">--:--:--</div>
-        </div>
+      <div class="nav-actions">
+        <button class="btn btn-outline" onclick="toggleTheme()">🌓 Theme</button>
+        <button class="btn btn-primary" onclick="location.reload()">🔄 Refresh</button>
       </div>
-    </section>
-
-    <section class="main-grid">
-      <div class="panel">
-        <div class="profile-hero">
-          <div class="avatar">QH</div>
-          <div>
-            <div class="profile-name">Nguyen Quang Huy</div>
-            <p class="profile-sub">
-              qhuyy0901 • Sinh viên CNTT / Network.<br/>
-              MSSV: 2380614932 • Lớp: 23DTHA4 • Khoa Công nghệ thông tin.<br/>
-              Hiện tại mình đang thực hiện đồ án cơ sở về Intelligent Load Balancer trên AWS, triển khai nhiều EC2 server, target group và theo dõi phân phối traffic.
-            </p>
-            <div class="chips">
-              <span class="chip">Từ Quy Nhơn</span>
-              <span class="chip">HUTECH</span>
-              <span class="chip">Đang học CCNA</span>
-              <span class="chip">Tìm hiểu MCSA</span>
-            </div>
-          </div>
-        </div>
-
-        <div class="info-grid">
-          <div class="info-item">
-            <div class="info-title">GitHub</div>
-            <div class="info-value">qhuyy0901</div>
-          </div>
-          <div class="info-item">
-            <div class="info-title">Học tập</div>
-            <div class="info-value">HUTECH</div>
-          </div>
-          <div class="info-item">
-            <div class="info-title">Hướng học hiện tại</div>
-            <div class="info-value">CCNA, MCSA, AWS cơ bản</div>
-          </div>
-          <div class="info-item">
-            <div class="info-title">Khu vực</div>
-            <div class="info-value">TP. Hồ Chí Minh</div>
-          </div>
-          <div class="info-item">
-            <div class="info-title">Đến từ</div>
-            <div class="info-value">Bình Định (Gia Lai NEW)</div>
-          </div>
-          <div class="info-item">
-            <div class="info-title">MSSV</div>
-            <div class="info-value">2380614932</div>
-          </div>
-          <div class="info-item">
-            <div class="info-title">Lớp</div>
-            <div class="info-value">23DTHA4</div>
-          </div>
-          <div class="info-item">
-            <div class="info-title">Khoa</div>
-            <div class="info-value">Công nghệ thông tin</div>
-          </div>
-          <div class="info-item">
-            <div class="info-title">Đồ án hiện tại</div>
-            <div class="info-value">Đồ án cơ sở Intelligent Load Balancer</div>
-          </div>
-          <div class="info-item">
-            <div class="info-title">Đồng đội</div>
-            <div class="info-value">Anh Trai: Đoàn Trọng Nghĩa</div>
-          </div>
-        </div>
-
-        <div class="action-row">
-          <button class="action-btn active" onclick="setStatus('Sẵn sàng demo',this)">Set Ready</button>
-          <button class="action-btn" onclick="setStatus('Đang trình bày',this)">Presenting</button>
-          <button class="action-btn" onclick="setStatus('Đang cập nhật',this)">Updating</button>
-          <button class="action-btn" onclick="setStatus('Nghỉ giải lao',this)">Break</button>
-        </div>
-
-        <div class="about-box">
-          <strong style="color:var(--text)">Giới thiệu ngắn</strong><br/>
-          Mình là Nguyễn Quang Huy, sinh viên khoa Công nghệ thông tin. Hiện tại mình đang học và thực hành các nội dung liên quan đến web cơ bản, hệ thống mạng và triển khai demo trên AWS.
-          <br/><br/>
-          Mục tiêu của mình là hiểu rõ cách hoạt động của EC2, Load Balancer, Target Group, health check và cách đưa một ứng dụng nhỏ lên môi trường thật để kiểm thử và trình bày đồ án.
-          <br/><br/>
-          Đây là phần web hồ sơ cá nhân đơn giản được tích hợp vào backend EC2 để khi request đi qua Load Balancer có thể hiển thị giao diện trực quan hơn, dễ quan sát hơn trong lúc demo.
-          <br/><br/>
-          <strong style="color:var(--text)">Trạng thái hiện tại:</strong>
-          <span id="demoStatus">Sẵn sàng demo</span>
-        </div>
-      </div>
-
-      <div class="side-stack">
-        <div class="panel">
-          <h2>Kỹ năng nổi bật</h2>
-          <div class="skill-list">
-            <div>
-              <div class="skill-top"><span>HTML / CSS / JavaScript</span><span>38%</span></div>
-              <div class="bar"><div class="fill" style="width:38%"></div></div>
-            </div>
-            <div>
-              <div class="skill-top"><span>AWS / EC2 / ALB</span><span>34%</span></div>
-              <div class="bar"><div class="fill" style="width:34%"></div></div>
-            </div>
-            <div>
-              <div class="skill-top"><span>Networking / Monitoring</span><span>36%</span></div>
-              <div class="bar"><div class="fill" style="width:36%"></div></div>
-            </div>
-            <div>
-              <div class="skill-top"><span>Node.js</span><span>32%</span></div>
-              <div class="bar"><div class="fill" style="width:32%"></div></div>
-            </div>
-          </div>
-        </div>
-
-        <div class="panel">
-          <h2>Thông tin liên hệ</h2>
-          <div class="contact-list">
-            <div class="contact-card">
-              <div class="contact-label">Email</div>
-              <div class="contact-value">qhuyy0901@gmail.com</div>
-            </div>
-            <div class="contact-card">
-              <div class="contact-label">Địa chỉ</div>
-              <div class="contact-value">Phạm Hùng, Xã Bình Hưng, TP. Hồ Chí Minh</div>
-            </div>
-            <div class="contact-card">
-              <div class="contact-label">GitHub Project</div>
-              <div class="contact-value">
-                <a href="https://github.com/qhuyy0901/IntelligentLoadBalancer_Network.git" target="_blank">
-                  github.com/qhuyy0901/IntelligentLoadBalancer_Network
-                </a>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <div class="panel">
-          <h2>Định hướng học tập</h2>
-          <div class="timeline">
-            <div class="timeline-item">
-              <div class="timeline-title">Củng cố nền tảng mạng</div>
-              <div class="timeline-desc">
-                Tiếp tục học CCNA để hiểu kỹ hơn về routing, switching, subnetting và cách vận hành hệ thống mạng.
-              </div>
-            </div>
-            <div class="timeline-item">
-              <div class="timeline-title">Tìm hiểu hệ thống Windows Server</div>
-              <div class="timeline-desc">
-                Làm quen thêm với MCSA và các nội dung liên quan đến quản trị hệ thống ở mức cơ bản.
-              </div>
-            </div>
-            <div class="timeline-item">
-              <div class="timeline-title">Hoàn thiện đồ án cơ sở</div>
-              <div class="timeline-desc">
-                Tập trung hoàn thiện demo Load Balancer trên AWS, kết hợp nhiều EC2 backend, dashboard monitoring và phần giao diện hiển thị trực quan hơn.
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <div class="panel">
-          <h2>Response Source</h2>
-          <div class="muted">Server hiện tại đang phục vụ request:</div>
-          <div style="margin-top:10px;font-size:26px;font-weight:900">${serverName} / port ${port}</div>
-          <div style="margin-top:8px;font-size:13px;color:var(--muted)">
-            Instance: ${m.instanceId} &nbsp;|&nbsp; IP: ${m.localIpv4}
-          </div>
-        </div>
-      </div>
-    </section>
-
-    <div class="footer">
-      Demo đồ án cơ sở • AWS Load Balancer • ${serverName}
     </div>
+  </nav>
+
+  <div class="container">
+    
+    <!-- TAB 1: SYSTEM MONITOR -->
+    <div id="tab-system" class="tab-content active">
+      
+      <!-- 3 Card Thông số riêng biệt, gọn gàng -->
+      <div class="grid-3">
+        <div class="card stat-card">
+          <div class="metric-label">Server Hostname</div>
+          <div class="metric-value" style="font-size: 24px;">${serverName}</div>
+        </div>
+        <div class="card stat-card">
+          <div class="metric-label">Tổng Requests</div>
+          <div class="metric-value" style="color: var(--accent);">${requestCount}</div>
+        </div>
+        <div class="card stat-card">
+          <div class="metric-label">Thời gian Server</div>
+          <div class="metric-value" id="clock" style="font-size: 22px;">--:--:--</div>
+        </div>
+      </div>
+
+      <div class="grid-2">
+        <!-- NODE INFO: Sử dụng Layout bảng (Key-Value) để xóa khoảng trống -->
+        <div class="card">
+          <div class="card-title">Node Info</div>
+          <div class="kv-list">
+            <div class="kv-item">
+              <span class="kv-label">Instance ID</span>
+              <span class="kv-value">${m.instanceId}</span>
+            </div>
+            <div class="kv-item">
+              <span class="kv-label">Private IP</span>
+              <span class="kv-value">${m.localIpv4}</span>
+            </div>
+            <div class="kv-item">
+              <span class="kv-label">Port Phục Vụ</span>
+              <span class="kv-value">${port}</span>
+            </div>
+            <div class="kv-item">
+              <span class="kv-label">Target Status</span>
+              <span class="kv-value" style="color: var(--accent);">Healthy (InService)</span>
+            </div>
+            <div class="kv-item" style="border: none; padding-top: 14px;">
+              <span class="kv-label" style="font-size: 12px; line-height: 1.4; width: 100%;">
+                <i>* Node đang hoạt động phía sau AWS ALB. Chờ nhận traffic điều phối.</i>
+              </span>
+            </div>
+          </div>
+        </div>
+
+        <!-- TRAFFIC MONITOR -->
+        <div class="card">
+          <div class="card-title">Traffic Monitor</div>
+          <div style="display: flex; gap: 8px; margin-bottom: 12px; flex-wrap: wrap;">
+            <button class="btn btn-primary" onclick="addLog('ALB Health Check: 200 OK')">Ping Health Check</button>
+            <button class="btn btn-outline" onclick="addLog('ALB Router: Nhận request thành công')">Test Traffic</button>
+            <button class="btn btn-outline" onclick="clearLogs()" style="color: #ef4444; border-color: #fca5a5;">Xóa Log</button>
+          </div>
+          <div id="trafficLogs" style="background: var(--bg); padding: 10px; border-radius: 6px; font-family: monospace; font-size: 12px; height: 125px; overflow-y: auto; display: flex; flex-direction: column; gap: 6px;">
+            <div>> [Khởi động] Sẵn sàng nhận traffic từ ALB...</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ROADMAP SECTION -->
+      <div class="card" style="margin-top: 16px;">
+        <div class="card-title">
+          <span>🚀 15. Intelligent Load Balancing</span>
+          <span class="chip" style="background: rgba(37, 99, 235, 0.1); color: var(--primary); font-weight: bold; margin: 0;">Roadmap</span>
+        </div>
+        
+        <div class="grid-2" style="margin-top: 12px;">
+          <!-- Khối Đồ án cơ sở -->
+          <div class="roadmap-box">
+            <h3 style="color: var(--primary);">📚 Đồ án cơ sở</h3>
+            <p style="font-size: 13px; margin-bottom: 8px;"><strong>Yêu cầu:</strong> Cấu hình Load Balancer.</p>
+            <div style="font-weight: 600; font-size: 13px;">Thực hiện (AWS):</div>
+            <ul>
+              <li>Deploy nhiều EC2 server (Autoscaling).</li>
+              <li>Tạo Elastic Load Balancer.</li>
+              <li>Tạo target group.</li>
+              <li>Test phân phối traffic.</li>
+            </ul>
+          </div>
+
+          <!-- Khối Đồ án chuyên ngành -->
+          <div class="roadmap-box">
+            <h3 style="color: var(--accent);">🎓 Đồ án chuyên ngành</h3>
+            <p style="font-size: 13px; margin-bottom: 8px;"><strong>Yêu cầu:</strong> AI điều chỉnh thuật toán load balancing.</p>
+            <div style="font-weight: 600; font-size: 13px;">Thực hiện:</div>
+            <ul>
+              <li>Thu thập log truy cập.</li>
+              <li>Phân tích traffic pattern.</li>
+              <li>AI phân phối traffic.</li>
+            </ul>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- TAB 2: PROFILE -->
+    <div id="tab-profile" class="tab-content">
+      <div class="grid-2">
+        <div class="card">
+          <div class="profile-header">
+            <div class="avatar">QH</div>
+            <div>
+              <h2 style="font-size: 22px; margin-bottom: 4px;">Nguyễn Quang Huy</h2>
+              <p style="color: var(--text-muted); font-size: 13px; margin-bottom: 6px;">Sinh viên CNTT / Network</p>
+              <div>
+                <span class="chip">Từ Quy Nhơn</span>
+                <span class="chip">HUTECH</span>
+              </div>
+            </div>
+          </div>
+          <p style="margin-bottom: 16px; font-size: 13px;">
+            Thực hiện đồ án cơ sở về Intelligent Load Balancer trên AWS, triển khai nhiều EC2 server, Target Group và theo dõi traffic.
+          </p>
+          
+          <div class="card-title" style="border: none; padding: 0; margin-bottom: 10px;">Tiến độ dự án</div>
+          <div style="display: flex; flex-direction: column; gap: 10px;">
+            <div>
+              <div style="display: flex; justify-content: space-between; font-size: 12px; margin-bottom: 4px;"><span>AWS / ALB</span> <span>35%</span></div>
+              <div style="height: 6px; background: var(--bg); border-radius: 3px; overflow: hidden;"><div style="width: 35%; height: 100%; background: var(--primary);"></div></div>
+            </div>
+            <div>
+              <div style="display: flex; justify-content: space-between; font-size: 12px; margin-bottom: 4px;"><span>CCNA / Networking</span> <span>38%</span></div>
+              <div style="height: 6px; background: var(--bg); border-radius: 3px; overflow: hidden;"><div style="width: 38%; height: 100%; background: var(--accent);"></div></div>
+            </div>
+            <div>
+              <div style="display: flex; justify-content: space-between; font-size: 12px; margin-bottom: 4px;"><span>Lập trình mạng</span> <span>30%</span></div>
+              <div style="height: 6px; background: var(--bg); border-radius: 3px; overflow: hidden;"><div style="width: 30%; height: 100%; background: var(--accent-alt);"></div></div>
+            </div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-title">Thông tin chi tiết</div>
+          <div class="info-list">
+            <div class="info-item"><span>MSSV</span><strong>2380614932</strong></div>
+            <div class="info-item"><span>Lớp</span><strong>23DTHA4</strong></div>
+            <div class="info-item"><span>Khoa</span><strong>Công nghệ thông tin</strong></div>
+            <div class="info-item"><span>Trường</span><strong>ĐH HUTECH</strong></div>
+            <div class="info-item"><span>Đồng đội</span><strong>Đoàn Trọng Nghĩa</strong></div>
+            <div class="info-item"><span>GitHub</span><strong>qhuyy0901</strong></div>
+            <div class="info-item" style="grid-column: span 2;">
+              <span>Project Repository</span>
+              <strong><a href="https://github.com/qhuyy0901/IntelligentLoadBalancer_Network.git" target="_blank" style="color: var(--primary); text-decoration: none;">IntelligentLoadBalancer_Network</a></strong>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- TAB 3: TOOLS -->
+    <div id="tab-tools" class="tab-content">
+      <div class="card">
+        <div class="card-title">Công cụ Client-side</div>
+        
+        <div class="grid-2" style="margin-top: 16px;">
+          <!-- Tool Mạng -->
+          <div class="tool-box">
+            <div class="card-title" style="font-size: 14px; color: var(--accent);">Cisco MAC Formatter</div>
+            <div class="input-group flex-row">
+              <input type="text" id="macInput" placeholder="Ví dụ: AA:BB:CC:DD:EE:FF">
+              <button class="btn btn-primary" onclick="formatMac()">Đổi</button>
+            </div>
+            <div class="tool-result" id="macResult">Chuyển đổi MAC sang chuẩn Cisco...</div>
+          </div>
+
+          <!-- Tool 2: Password Generator -->
+          <div class="tool-box">
+            <div class="card-title" style="font-size: 14px;">Tạo Mật Khẩu Random</div>
+            <div class="input-group flex-row">
+              <label style="margin: 0;">Độ dài (8-64):</label>
+              <input type="number" id="pwdLength" value="16" min="8" max="64" style="width: 70px;">
+              <button class="btn btn-primary" onclick="generatePassword()">Tạo</button>
+            </div>
+            <div class="tool-result" id="pwdResult" style="font-weight: bold; color: var(--accent-alt);">...</div>
+          </div>
+          
+          <!-- Tool 1: Base64 -->
+          <div class="tool-box">
+            <div class="card-title" style="font-size: 14px;">Mã hóa Base64</div>
+            <div class="input-group">
+              <textarea id="base64Input" rows="2" placeholder="Nhập văn bản..."></textarea>
+            </div>
+            <div class="flex-row">
+              <button class="btn btn-primary" onclick="encodeBase64()">Mã hóa</button>
+              <button class="btn btn-outline" onclick="decodeBase64()">Giải mã</button>
+            </div>
+            <div class="tool-result" id="base64Result">Kết quả...</div>
+          </div>
+
+          <!-- Tool 3: JSON Formatter -->
+          <div class="tool-box">
+            <div class="card-title" style="font-size: 14px;">JSON Formatter</div>
+            <div class="input-group">
+              <textarea id="jsonInput" rows="2" placeholder='{"status":"ok"}'></textarea>
+            </div>
+            <button class="btn btn-primary" onclick="formatJson()">Format</button>
+            <textarea id="jsonResult" rows="5" class="tool-result" readonly style="width:100%; margin-top: 8px;"></textarea>
+          </div>
+        </div>
+      </div>
+    </div>
+
   </div>
 
   <script>
-    const clockEl    = document.getElementById('clock');
-    const statusEl   = document.getElementById('demoStatus');
-
-    function updateClock() {
-      clockEl.textContent = new Date().toLocaleString('vi-VN');
+    function switchTab(tabId) {
+      document.querySelectorAll('.tab-content').forEach(el => el.classList.remove('active'));
+      document.querySelectorAll('.tab-btn').forEach(el => el.classList.remove('active'));
+      document.getElementById(tabId).classList.add('active');
+      event.currentTarget.classList.add('active');
     }
+
     function toggleTheme() {
       document.body.classList.toggle('dark');
+      localStorage.setItem('theme', document.body.classList.contains('dark') ? 'dark' : 'light');
     }
-    function showWelcome() {
-      alert('Xin chào, đây là hồ sơ cá nhân demo từ ${serverName}');
+    if(localStorage.getItem('theme') === 'dark') document.body.classList.add('dark');
+
+    setInterval(() => {
+      document.getElementById('clock').textContent = new Date().toLocaleTimeString('vi-VN');
+    }, 1000);
+
+    // Logs
+    function addLog(message) {
+      const logContainer = document.getElementById('trafficLogs');
+      const timeStr = new Date().toLocaleTimeString('vi-VN');
+      const newLog = document.createElement('div');
+      newLog.textContent = \`> [\${timeStr}] \${message}\`;
+      logContainer.appendChild(newLog);
+      logContainer.scrollTop = logContainer.scrollHeight;
     }
-    function setStatus(text, el) {
-      statusEl.textContent = text;
-      document.querySelectorAll('.action-btn').forEach(b => b.classList.remove('active'));
-      el.classList.add('active');
+    function clearLogs() {
+      document.getElementById('trafficLogs').innerHTML = '<div>> Logs đã được làm sạch.</div>';
     }
-    updateClock();
-    setInterval(updateClock, 1000);
+
+    // Tools
+    function formatMac() {
+      let mac = document.getElementById('macInput').value.replace(/[^a-fA-F0-9]/g, '').toLowerCase();
+      if (mac.length !== 12) {
+         document.getElementById('macResult').innerHTML = "<span style='color:red'>Lỗi: Yêu cầu 12 ký tự Hex.</span>";
+         return;
+      }
+      let cisco = mac.match(/.{1,4}/g).join('.');
+      let standard = mac.match(/.{1,2}/g).join(':');
+      document.getElementById('macResult').innerHTML = \`
+        Cisco: <span style="color:var(--primary)">\${cisco}</span> <br> 
+        Chuẩn: <span style="color:var(--accent)">\${standard}</span>
+      \`;
+    }
+
+    function encodeBase64() {
+      try {
+        const input = document.getElementById('base64Input').value;
+        document.getElementById('base64Result').textContent = btoa(unescape(encodeURIComponent(input)));
+      } catch(e) { document.getElementById('base64Result').textContent = "Lỗi!"; }
+    }
+    function decodeBase64() {
+      try {
+        const input = document.getElementById('base64Input').value;
+        document.getElementById('base64Result').textContent = decodeURIComponent(escape(atob(input)));
+      } catch(e) { document.getElementById('base64Result').textContent = "Lỗi chuỗi!"; }
+    }
+
+    function generatePassword() {
+      const chars = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789!@#$%^&*()";
+      let len = parseInt(document.getElementById('pwdLength').value) || 16;
+      if(len < 8) len = 8; if(len > 64) len = 64;
+      let pass = "";
+      for (let i = 0; i < len; i++) {
+        pass += chars[Math.floor(Math.random() * chars.length)];
+      }
+      document.getElementById('pwdResult').textContent = pass;
+    }
+
+    function formatJson() {
+      const input = document.getElementById('jsonInput').value;
+      const resultEl = document.getElementById('jsonResult');
+      try {
+        const parsed = JSON.parse(input);
+        resultEl.value = JSON.stringify(parsed, null, 4);
+        resultEl.style.color = "var(--text-main)";
+      } catch(e) {
+        resultEl.value = "LỖI JSON.\\n" + e.message;
+        resultEl.style.color = "red";
+      }
+    }
   </script>
 </body>
 </html>`;
@@ -525,7 +527,6 @@ const server = http.createServer((req, res) => {
     return;
   }
 
-  // All other routes — count + serve HTML
   requestCount += 1;
   res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
   res.end(renderHtml());
@@ -536,6 +537,5 @@ const server = http.createServer((req, res) => {
 loadMetadata().finally(() => {
   server.listen(port, '0.0.0.0', () => {
     console.log(`[aws-backend] ${serverName} listening on :${port}`);
-    console.log(`[aws-backend] zone=${getMeta().az}`);
   });
 });
