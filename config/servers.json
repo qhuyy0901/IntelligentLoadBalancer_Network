@@ -3,40 +3,11 @@
     "port": 8000,
     "wsPort": 9090,
     "algorithm": "round-robin",
-    "healthCheckInterval": 5000,
-    "logBufferSize": 100,
-    "distributionWindowMs": 8000
+    "healthCheckInterval": 5000
   },
   "servers": [
-    {
-      "id": "ec2-1",
-      "name": "EC2-1",
-      "host": "3.107.233.161",
-      "port": 3000,
-      "domain": "ec2-1.aws",
-      "weight": 1,
-      "enabled": true,
-      "color": "#2dd4bf"
-    },
-    {
-      "id": "ec2-2",
-      "name": "EC2-2",
-      "host": "13.55.183.88",
-      "port": 3000,
-      "domain": "ec2-2.aws",
-      "weight": 1,
-      "enabled": true,
-      "color": "#3b82f6"
-    },
-    {
-      "id": "ec2-3",
-      "name": "EC2-3",
-      "host": "16.176.6.119",
-      "port": 3000,
-      "domain": "ec2-3.aws",
-      "weight": 1,
-      "enabled": true,
-      "color": "#f59e0b"
-    }
+    { "id": "ec2-1", "host": "3.107.233.161", "port": 3000 },
+    { "id": "ec2-2", "host": "13.55.183.88", "port": 3000 },
+    { "id": "ec2-3", "host": "16.176.6.119", "port": 3000 }
   ]
 }
