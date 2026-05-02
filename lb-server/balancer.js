@@ -1,6 +1,9 @@
 
+const path = require('path');
+const fs = require('fs');
 
-const config = require('../config/servers.json');
+const configPath = path.join(__dirname, '../config/servers.json');
+const config = JSON.parse(fs.readFileSync(configPath, 'utf-8'));
 
 let currentIndex = 0;
 let lastPickedIndex = -1;

@@ -1,4 +1,8 @@
-const config = require('../config/servers.json');
+const path = require('path');
+const fs = require('fs');
+
+const configPath = path.join(__dirname, '../config/servers.json');
+const config = JSON.parse(fs.readFileSync(configPath, 'utf-8'));
 const { getLoadBalancingMetrics } = require('./logger');
 const { getServerStates, setServerEnabled } = require('./balancer');
 

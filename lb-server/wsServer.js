@@ -1,7 +1,10 @@
 const path = require('path');
 const dotenv = require('dotenv');
+const fs = require('fs');
 const WebSocket = require('ws');
-const config = require('../config/servers.json');
+
+const configPath = path.join(__dirname, '../config/servers.json');
+const config = JSON.parse(fs.readFileSync(configPath, 'utf-8'));
 const { getAlgorithm, getServerStates } = require('./balancer');
 const { getRates, getRecentRequests, getLoadBalancingMetrics } = require('./logger');
 const { getAutoScalingState } = require('./autoScaling');

@@ -1,7 +1,11 @@
 
 
 const http = require('http');
-const config = require('../config/servers.json');
+const path = require('path');
+const fs = require('fs');
+
+const configPath = path.join(__dirname, '../config/servers.json');
+const config = JSON.parse(fs.readFileSync(configPath, 'utf-8'));
 const { updateServerStatus } = require('./balancer'); // Cập nhật trạng thái server trong balancer
 
 // Thời gian giữa các lần kiểm tra (mặc định 5000ms = 5 giây)

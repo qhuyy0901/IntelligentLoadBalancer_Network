@@ -8,9 +8,14 @@ dotenv.config({ path: path.join(__dirname, '..', '.env') });
 
 const ENABLE_AWS = process.env.ENABLE_AWS === 'true';
 
+const fs = require('fs');
 const http = require('http');
 const httpProxy = require('http-proxy');    // Thư viện proxy HTTP — chuyển tiếp request đến backend
-const config = require('../config/servers.json'); // Cấu hình trung tâm: port, thuật toán, danh sách server
+
+const configPath = path.join(__dirname, '../config/servers.json');
+const config = JSON.parse(fs.readFileSync(configPath, 'utf-8'));
+
+console.log("CONFIG LOADED:", config);
 
 
 const {

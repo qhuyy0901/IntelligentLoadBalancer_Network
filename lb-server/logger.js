@@ -1,6 +1,9 @@
 
+const path = require('path');
+const fs = require('fs');
 
-const config = require('../config/servers.json');
+const configPath = path.join(__dirname, '../config/servers.json');
+const config = JSON.parse(fs.readFileSync(configPath, 'utf-8'));
 
 // Số lượng request tối đa giữ trong bộ nhớ
 const BUFFER_SIZE = config.loadBalancer.logBufferSize || 100;
