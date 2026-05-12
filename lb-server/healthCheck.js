@@ -3,6 +3,10 @@
 const http = require('http');
 const path = require('path');
 const fs = require('fs');
+const dotenv = require('dotenv');
+
+dotenv.config({ path: path.join(__dirname, '..', '.env') });
+const ENABLE_AWS = process.env.ENABLE_AWS === 'true';
 
 const configPath = path.join(__dirname, '../config/servers.json');
 const config = JSON.parse(fs.readFileSync(configPath, 'utf-8'));
@@ -86,6 +90,12 @@ function checkServer(server) {
 
 // Khởi động vòng lặp kiểm tra sức khỏe định kỳ
 function startHealthChecks() {
+  // AWS mode: không health-check trực tiếp EC2 IP vì IP động và traffic đi qua ALB
+  if (ENABLE_AWS) {
+    console.log('[HealthCheck] AWS mode — skipping direct EC2 health checks. Health status comes from Target Group.');
+    return;
+  }
+
   console.log(`[HealthCheck] chạy mỗi ${INTERVAL}ms...`);
 
   setInterval(async () => {

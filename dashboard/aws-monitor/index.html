@@ -1,0 +1,238 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <base href="/aws-monitor/" />
+  <title>Intelligent Load Balancer — AWS Monitor</title>
+  <meta name="description" content="Real-time read-only AWS infrastructure dashboard: EC2, ALB, Target Group, Auto Scaling Group, CloudWatch Metrics." />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="css/style.css" />
+</head>
+<body>
+
+  <!-- ═══ TOP BAR ═══ -->
+  <header class="topbar">
+    <div class="topbar-left">
+      <!-- Logo — click to reload -->
+      <a class="topbar-logo" href="#" onclick="window.location.reload();return false;" title="Click to reload">
+        <svg width="34" height="34" viewBox="0 0 34 34" fill="none">
+          <rect width="34" height="34" rx="8" fill="url(#g1)"/>
+          <path d="M9 22c2.5-7 5-12 8-12s5.5 5 8 12" stroke="#fff" stroke-width="2.2" stroke-linecap="round" fill="none"/>
+          <circle cx="17" cy="12" r="2.3" fill="#fff"/>
+          <circle cx="11" cy="19" r="1.5" fill="#fff" opacity=".6"/>
+          <circle cx="23" cy="19" r="1.5" fill="#fff" opacity=".6"/>
+          <defs><linearGradient id="g1" x1="0" y1="0" x2="34" y2="34"><stop stop-color="#f59e0b"/><stop offset="1" stop-color="#ef4444"/></linearGradient></defs>
+        </svg>
+        <div class="topbar-text">
+          <span class="topbar-title">Intelligent Load Balancer</span>
+        </div>
+      </a>
+      <span class="badge badge-green badge-glow">READ-ONLY</span>
+    </div>
+    <div class="topbar-right">
+      <div class="topbar-pill" id="pillRegion" title="AWS Region">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M2 12h20M12 2a15 15 0 010 20M12 2a15 15 0 000 20"/></svg>
+        <span id="regionLabel">—</span>
+      </div>
+      <div class="topbar-pill" id="pillConn">
+        <span class="conn-dot" id="connDot"></span>
+        <span id="connLabel">Connecting…</span>
+      </div>
+      <div class="topbar-pill" id="pillTimer" title="Next refresh">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+        <span id="timerLabel">—</span>
+      </div>
+      <!-- Dark/Light toggle -->
+      <button class="theme-btn" id="themeToggle" title="Toggle light/dark mode">
+        <span id="themeIcon">🌙</span>
+        <span id="themeLabel">Dark</span>
+      </button>
+    </div>
+  </header>
+
+  <!-- ═══ ERROR BANNER ═══ -->
+  <div class="err-banner hidden" id="errBanner">
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+    <span id="errText"></span>
+  </div>
+
+  <!-- ═══ MAIN ═══ -->
+  <main class="main">
+
+    <!-- ── Row 1: Summary Stat Cards ── -->
+    <section class="stat-row" id="statRow">
+      <div class="stat-card stat-ec2">
+        <div class="stat-icon"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg></div>
+        <div class="stat-info"><div class="stat-label">EC2 Instances</div><div class="stat-value" id="statEc2">—</div><div class="stat-hint" id="statEc2Hint">loading…</div></div>
+      </div>
+      <div class="stat-card stat-alb">
+        <div class="stat-icon"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg></div>
+        <div class="stat-info"><div class="stat-label">Load Balancer</div><div class="stat-value" id="statAlb">—</div><div class="stat-hint" id="statAlbHint">loading…</div></div>
+      </div>
+      <div class="stat-card stat-tg">
+        <div class="stat-icon"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="2"/></svg></div>
+        <div class="stat-info"><div class="stat-label">Target Group</div><div class="stat-value" id="statTg">—</div><div class="stat-hint" id="statTgHint">loading…</div></div>
+      </div>
+      <div class="stat-card stat-asg">
+        <div class="stat-icon"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M16 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="8.5" cy="7" r="4"/><line x1="20" y1="8" x2="20" y2="14"/><line x1="23" y1="11" x2="17" y2="11"/></svg></div>
+        <div class="stat-info"><div class="stat-label">Auto Scaling</div><div class="stat-value" id="statAsg">—</div><div class="stat-hint" id="statAsgHint">loading…</div></div>
+      </div>
+      <div class="stat-card stat-cw">
+        <div class="stat-icon"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg></div>
+        <div class="stat-info"><div class="stat-label">CloudWatch</div><div class="stat-value" id="statCw">—</div><div class="stat-hint" id="statCwHint">loading…</div></div>
+      </div>
+    </section>
+
+    <!-- ── Row 2: Two-column detail cards ── -->
+    <section class="grid-2col">
+
+      <!-- ▸ EC2 INSTANCES -->
+      <div class="card" id="cardEc2">
+        <div class="card-head">
+          <h2 class="card-title"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg> EC2 Instances</h2>
+          <span class="card-badge" id="ec2Badge">0</span>
+        </div>
+        <div class="card-body">
+          <div class="scroll-y">
+            <table class="tbl" id="ec2Tbl">
+              <thead><tr><th>Instance ID</th><th>Name</th><th>State</th><th>AZ</th><th></th></tr></thead>
+              <tbody id="ec2Body"><tr><td colspan="5" class="tbl-empty">Waiting for data…</td></tr></tbody>
+            </table>
+          </div>
+          <!-- Traffic distribution bars -->
+          <div class="dist-section" id="distSection" style="display:none">
+            <div class="dist-title">Traffic Distribution</div>
+            <div id="distBars"></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ▸ LOAD BALANCER -->
+      <div class="card" id="cardAlb">
+        <div class="card-head">
+          <h2 class="card-title"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg> Application Load Balancer</h2>
+          <span class="card-badge badge-green" id="albBadge">—</span>
+        </div>
+        <div class="card-body">
+          <div class="kv-grid">
+            <div class="kv"><span class="kv-k">Name</span><span class="kv-v" id="albName">—</span></div>
+            <div class="kv"><span class="kv-k">DNS Name</span><span class="kv-v mono" id="albDns">—</span></div>
+            <div class="kv"><span class="kv-k">State</span><span class="kv-v" id="albState">—</span></div>
+            <div class="kv"><span class="kv-k">Scheme</span><span class="kv-v" id="albScheme">—</span></div>
+            <div class="kv"><span class="kv-k">Type</span><span class="kv-v" id="albType">—</span></div>
+            <div class="kv"><span class="kv-k">Availability Zones</span><span class="kv-v" id="albAzs">—</span></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ▸ TARGET GROUP -->
+      <div class="card" id="cardTg">
+        <div class="card-head">
+          <h2 class="card-title"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="2"/></svg> Target Group</h2>
+          <span class="card-badge" id="tgBadge">—</span>
+        </div>
+        <div class="card-body">
+          <div class="kv-grid kv-4">
+            <div class="kv"><span class="kv-k">Name</span><span class="kv-v" id="tgName">—</span></div>
+            <div class="kv"><span class="kv-k">Protocol / Port</span><span class="kv-v" id="tgProto">—</span></div>
+            <div class="kv"><span class="kv-k">Healthy</span><span class="kv-v c-green fw700" id="tgHealthy">—</span></div>
+            <div class="kv"><span class="kv-k">Unhealthy</span><span class="kv-v c-red fw700" id="tgUnhealthy">—</span></div>
+          </div>
+          <table class="tbl mt16" id="tgTbl">
+            <thead><tr><th>Target ID</th><th>Port</th><th>AZ</th><th>Health</th><th>Reason</th></tr></thead>
+            <tbody id="tgBody"><tr><td colspan="5" class="tbl-empty">Waiting for data…</td></tr></tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- ▸ AUTO SCALING GROUP -->
+      <div class="card" id="cardAsg">
+        <div class="card-head">
+          <h2 class="card-title"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M16 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="8.5" cy="7" r="4"/><line x1="20" y1="8" x2="20" y2="14"/><line x1="23" y1="11" x2="17" y2="11"/></svg> Auto Scaling Group</h2>
+          <span class="card-badge" id="asgBadge">—</span>
+        </div>
+        <div class="card-body">
+          <div class="kv-grid kv-3">
+            <div class="kv"><span class="kv-k">Group Name</span><span class="kv-v mono" id="asgName">—</span></div>
+            <div class="kv"><span class="kv-k">Min / Desired / Max</span><span class="kv-v" id="asgCap">—</span></div>
+            <div class="kv"><span class="kv-k">Current Instances</span><span class="kv-v fw700" id="asgCurrent">—</span></div>
+          </div>
+          <div class="cap-bar-row mt16">
+            <span class="cap-label">Capacity</span>
+            <div class="cap-track"><div class="cap-fill" id="capFill"></div></div>
+            <span class="cap-text" id="capText">0/0</span>
+          </div>
+          <div class="sub-head mt16">Instance Health</div>
+          <table class="tbl" id="asgTbl">
+            <thead><tr><th>Instance ID</th><th>Lifecycle</th><th>Health</th><th>AZ</th></tr></thead>
+            <tbody id="asgBody"><tr><td colspan="4" class="tbl-empty">Waiting for data…</td></tr></tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- ▸ CLOUDWATCH METRICS -->
+      <div class="card" id="cardCw">
+        <div class="card-head">
+          <h2 class="card-title"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg> CloudWatch Metrics</h2>
+          <span class="card-badge badge-purple" id="cwBadge">—</span>
+        </div>
+        <div class="card-body">
+          <div class="metric-grid">
+            <div class="metric-tile"><div class="mt-lbl">Request Count</div><div class="mt-val" id="cwReqCount">—</div><div class="mt-unit">per period</div></div>
+            <div class="metric-tile"><div class="mt-lbl">Request Rate</div><div class="mt-val" id="cwReqRate">—</div><div class="mt-unit">req/s</div></div>
+            <div class="metric-tile"><div class="mt-lbl">Response Time</div><div class="mt-val" id="cwRespTime">—</div><div class="mt-unit">seconds (avg)</div></div>
+            <div class="metric-tile"><div class="mt-lbl">Healthy Hosts</div><div class="mt-val" id="cwHealthy">—</div><div class="mt-unit">count</div></div>
+            <div class="metric-tile"><div class="mt-lbl">Unhealthy Hosts</div><div class="mt-val" id="cwUnhealthy">—</div><div class="mt-unit">count</div></div>
+            <div class="metric-tile"><div class="mt-lbl">Error Rate</div><div class="mt-val" id="cwErrRate">—</div><div class="mt-unit">% of total</div></div>
+            <div class="metric-tile"><div class="mt-lbl">HTTP 2xx</div><div class="mt-val" id="cwH2xx">—</div><div class="mt-unit">success</div></div>
+            <div class="metric-tile"><div class="mt-lbl">HTTP 4xx / 5xx</div><div class="mt-val" id="cwHErr">—</div><div class="mt-unit">client / server</div></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ▸ ACTIVITY LOGS -->
+      <div class="card" id="cardActivity">
+        <div class="card-head">
+          <h2 class="card-title"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg> Scaling Activity Logs</h2>
+          <span class="card-badge badge-gray" id="actBadge">0 events</span>
+        </div>
+        <div class="card-body scroll-y" style="max-height:260px">
+          <div class="timeline" id="timeline">
+            <div class="tbl-empty">Waiting for data…</div>
+          </div>
+        </div>
+      </div>
+
+
+
+    </section>
+
+  </main>
+
+  <!-- ═══ FOOTER ═══ -->
+  <footer class="footer">
+    <span id="footerTs">—</span>
+  </footer>
+
+  <!-- ═══ EC2 DETAIL MODAL ═══ -->
+  <div class="modal-overlay hidden" id="modalOverlay">
+    <div class="modal">
+      <div class="modal-head">
+        <span class="modal-title" id="modalTitle">EC2 Instance Details</span>
+        <button class="modal-close" id="modalClose" title="Close">✕</button>
+      </div>
+      <div class="modal-body" id="modalBody">
+        <!-- filled by JS -->
+      </div>
+      <div class="modal-foot">
+        <button class="btn-close-modal" id="modalFootClose">Close</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="js/app.js"></script>
+</body>
+</html>

@@ -1,3 +1,13 @@
+/**
+ * localScaling.js — Local Auto Scaling Simulation (KHÔNG gọi AWS)
+ *
+ * Bật/tắt server trong config/servers.json dựa theo request rate.
+ * Mô phỏng scale-out / scale-in khi demo trên máy local.
+ *
+ * KHÁC VỚI aws/autoscaling.js:
+ *   - aws/autoscaling.js = đọc trạng thái ASG thật từ AWS SDK (read-only)
+ *   - lb-server/localScaling.js = điều khiển pool server local, không gọi AWS
+ */
 const path = require('path');
 const fs = require('fs');
 

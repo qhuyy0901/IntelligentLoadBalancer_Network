@@ -17,7 +17,7 @@ function toLoadBalancerDimensionValue(loadBalancerArn = '') {
 function toTargetGroupDimensionValue(targetGroupArn = '') {
   const marker = 'targetgroup/';
   const index = targetGroupArn.indexOf(marker);
-  return index >= 0 ? targetGroupArn.slice(index + marker.length) : null;
+  return index >= 0 ? targetGroupArn.slice(index) : null;
 }
 
 // Reject placeholder values like '...', 'YOUR_ARN_HERE', etc.
@@ -58,6 +58,9 @@ async function getCloudWatchSnapshot(options = {}) {
   const lbDimensionValue = toLoadBalancerDimensionValue(loadBalancerArn || '');
   const tgDimensionValue = toTargetGroupDimensionValue(targetGroupArn || '');
 
+  console.log("LB DIM:", lbDimensionValue);
+  console.log("TG DIM:", tgDimensionValue);
+
   if (!lbDimensionValue) {
     return {
       periodSeconds,
@@ -79,18 +82,14 @@ async function getCloudWatchSnapshot(options = {}) {
 
   const now = new Date();
   const startTime = new Date(now.getTime() - lookbackMinutes * 60 * 1000);
-
-  const dimensions = [{ Name: 'LoadBalancer', Value: lbDimensionValue }];
-  if (tgDimensionValue) dimensions.push({ Name: 'TargetGroup', Value: tgDimensionValue });
-
   const queryDefinitions = [
-    { id: 'requestCount', metricName: 'RequestCount', stat: 'Sum' },
-    { id: 'targetResponseTime', metricName: 'TargetResponseTime', stat: 'Average' },
-    { id: 'httpCodeTarget2xx', metricName: 'HTTPCode_Target_2XX_Count', stat: 'Sum' },
-    { id: 'httpCodeTarget4xx', metricName: 'HTTPCode_Target_4XX_Count', stat: 'Sum' },
-    { id: 'httpCodeTarget5xx', metricName: 'HTTPCode_Target_5XX_Count', stat: 'Sum' },
-    { id: 'healthyHostCount', metricName: 'HealthyHostCount', stat: 'Average' },
-    { id: 'unHealthyHostCount', metricName: 'UnHealthyHostCount', stat: 'Average' }
+    { id: 'requestCount',       metricName: 'RequestCount',                stat: 'Sum'     },
+    { id: 'targetResponseTime', metricName: 'TargetResponseTime',          stat: 'Average' },
+    { id: 'httpCodeTarget2xx',  metricName: 'HTTPCode_Target_2XX_Count',   stat: 'Sum'     },
+    { id: 'httpCodeTarget4xx',  metricName: 'HTTPCode_Target_4XX_Count',   stat: 'Sum'     },
+    { id: 'httpCodeTarget5xx',  metricName: 'HTTPCode_Target_5XX_Count',   stat: 'Sum'     },
+    { id: 'healthyHostCount',   metricName: 'HealthyHostCount',            stat: 'Average' },
+    { id: 'unHealthyHostCount', metricName: 'UnHealthyHostCount',          stat: 'Average' }
   ];
 
   const metricDataQueries = queryDefinitions.map((definition) => ({
@@ -100,7 +99,14 @@ async function getCloudWatchSnapshot(options = {}) {
       Metric: {
         Namespace: 'AWS/ApplicationELB',
         MetricName: definition.metricName,
-        Dimensions: dimensions
+        Dimensions: definition.metricName.includes('HostCount')
+          ? [
+              { Name: 'LoadBalancer', Value: lbDimensionValue },
+              { Name: 'TargetGroup', Value: tgDimensionValue }
+            ]
+          : [
+              { Name: 'LoadBalancer', Value: lbDimensionValue }
+            ]
       },
       Period: periodSeconds,
       Stat: definition.stat

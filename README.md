@@ -6,35 +6,49 @@ Demo AWS Application Load Balancer với Auto Scaling Group, Target Group health
 
 ```
 Internet → ALB (port 80) → Target Group (port 3000) → EC2 instances (ASG)
-                                                              ↕
-Dashboard (port 4000) ←── WebSocket ←── lb-server (port 8000/9090)
+                                                               ↕ (read-only)
+lb-server (port 8000) ──/api/aws/overview──→ aws/awsDashboard.js → AWS SDK
+     └─── serves /aws-monitor ──────────────────────────────→ browser
 ```
 
 ## Cấu trúc project
 
 ```
 IntelligentLoadBalancer_Network/
-├── aws/
-│   ├── ec2.js                          # AWS EC2 API
-│   ├── elb.js                          # AWS ELB API
-│   ├── autoscaling.js                  # AWS Auto Scaling API
-│   ├── cloudwatch.js                   # AWS CloudWatch API
-│   └── user-data-amazon-linux-2023.sh  # Launch Template User Data
-├── config/
-│   └── servers.json                    # LB server config (ports, WS port)
+├── aws/                             # Toàn bộ AWS SDK logic (read-only)
+│   ├── ec2.js                       #   DescribeInstances
+│   ├── elb.js                       #   DescribeTargetGroups, DescribeTargetHealth
+│   ├── autoscaling.js               #   DescribeAutoScalingGroups (read-only)
+│   ├── cloudwatch.js                #   GetMetricData
+│   └── awsDashboard.js              #   Aggregator → GET /api/aws/overview
+│
+├── lb-server/                       # HTTP server (port 8000)
+│   ├── index.js                     #   Entry point + routes
+│   ├── balancer.js                  #   Round-robin / least-conn
+│   ├── healthCheck.js               #   Ping /health mỗi 5s
+│   ├── logger.js                    #   Request log + metrics
+│   ├── localScaling.js              #   Local pool simulation (KHÔNG gọi AWS)
+│   └── wsServer.js                  #   WebSocket (port 9090) → broadcast stats
+│
 ├── dashboard/
-│   ├── index.html
-│   ├── css/style.css
-│   └── js/app.js, chart-init.js, target-group.js, traffic.js, ws.js
+│   └── aws-monitor/                 # AWS Monitor Dashboard (read-only)
+│       ├── index.html
+│       ├── css/style.css
+│       └── js/app.js
+│
 ├── ec2-web/
-│   └── aws-backend.js                  # App chạy trên EC2 trong ASG (port 3000)
-├── lb-server/
-│   ├── index.js                        # HTTP server (port 8000)
-│   └── wsServer.js                     # WebSocket server (port 9090) → polls AWS
+│   └── aws-backend.js               # App chạy trên EC2 trong ASG — KHÔNG SỬA
+│
 ├── scripts/
-│   └── testAlbTraffic.js               # Test script gửi traffic lên ALB
+│   ├── testAlbTraffic.js            # Gửi traffic lên ALB để demo + populate CloudWatch
+│   └── user-data-amazon-linux-2023.sh
+│
+├── config/
+│   └── servers.json
+├── .env
 ├── .env.example
-└── package.json
+├── package.json
+└── README.md
 ```
 
 ## Yêu cầu
@@ -71,20 +85,23 @@ AUTO_SCALING_GROUP_NAME=lb-asg
 ALB_DNS=my-alb-2056764661.ap-southeast-2.elb.amazonaws.com
 TARGET_GROUP_ARN=arn:aws:elasticloadbalancing:ap-southeast-2:039914330851:targetgroup/taget-ec2/b614f82f47c5e038
 LOAD_BALANCER_ARN=arn:aws:elasticloadbalancing:ap-southeast-2:039914330851:loadbalancer/app/my-alb/...
+ENABLE_AWS=true
 ```
 
-### 3. Chạy Dashboard trên EC2 chính (máy monitor, không thuộc ASG)
+### 3. Chạy server trên EC2 chính (máy monitor, không thuộc ASG)
 
 ```bash
-npm start
-# Hoặc tách riêng:
-npm run lb         # LB server + WebSocket AWS poller  (port 8000, 9090)
-npm run dashboard  # Static file server dashboard      (port 4000)
+npm start          # = node lb-server/index.js
+# hoặc
+npm run lb
 ```
 
-Mở trình duyệt: `http://<EC2-public-ip>:4000`
+| Dashboard | URL | Mô tả |
+|-----------|-----|-------|
+| **AWS Monitor** | `http://<EC2-ip>:8000/aws-monitor` | EC2, ALB, TG, ASG, CloudWatch (read-only) |
 
-> **Lưu ý:** EC2 chạy dashboard cần Security Group mở port 4000 và 9090.
+> **Lưu ý:** Security Group cần mở port **8000** và **9090** (WebSocket).
+> Dashboard chạy trên cùng port với LB server, không cần server riêng.
 
 ---
 
@@ -92,7 +109,7 @@ Mở trình duyệt: `http://<EC2-public-ip>:4000`
 
 ### Launch Template User Data
 
-File: `aws/user-data-amazon-linux-2023.sh`
+File: `scripts/user-data-amazon-linux-2023.sh`
 
 Mỗi EC2 do ASG tạo ra sẽ tự động:
 1. Cài Node.js, npm, git, pm2

@@ -4,10 +4,9 @@
   "description": "Intelligent Load Balancing project simulating AWS EC2 + ELB with traffic distribution and failover demo",
   "main": "lb-server/index.js",
   "scripts": {
-    "start": "concurrently --names \"LB,DASH\" --prefix-colors \"green,magenta\" \"node lb-server/index.js\" \"npx serve dashboard -p 4000 --no-clipboard\"",
-    "lb": "node lb-server/index.js",
-    "dashboard": "npx serve dashboard -p 4000 --no-clipboard",
-    "ec2-app": "node ec2-web/aws-backend.js",
+    "start":        "node lb-server/index.js",
+    "lb":           "node lb-server/index.js",
+    "ec2-app":      "node ec2-web/aws-backend.js",
     "test-traffic": "node scripts/testAlbTraffic.js"
   },
   "dependencies": {

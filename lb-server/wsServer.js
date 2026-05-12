@@ -7,11 +7,16 @@ const configPath = path.join(__dirname, '../config/servers.json');
 const config = JSON.parse(fs.readFileSync(configPath, 'utf-8'));
 const { getAlgorithm, getServerStates } = require('./balancer');
 const { getRates, getRecentRequests, getLoadBalancingMetrics } = require('./logger');
-const { getAutoScalingState } = require('./autoScaling');
 
 dotenv.config({ path: path.join(__dirname, '..', '.env') });
 
 const ENABLE_AWS = process.env.ENABLE_AWS === 'true';
+
+// ── Local Auto Scaling state: chỉ dùng trong local mode ─────────────────────
+let getAutoScalingState;
+if (!ENABLE_AWS) {
+  ({ getAutoScalingState } = require('./localScaling'));
+}
 
 // ── AWS modules: chỉ import khi ENABLE_AWS=true ──────────────────────────────
 let getEC2Instances, getEC2StateSummary, getTargetGroupAndLoadBalancer,
@@ -292,7 +297,8 @@ async function buildAwsPayload() {
         ? round(100 - cloudWatch.errorRate, 2)
         : legacyMetrics.successRatePct
     },
-    simulatedAutoScaling: getAutoScalingState(),
+    // AWS mode không có local auto scaling simulation
+    simulatedAutoScaling: null,
     localRates: getRates()
   };
 }
@@ -336,7 +342,7 @@ function buildLocalPayload() {
     servers,
     traffic,
     metrics,
-    simulatedAutoScaling: getAutoScalingState(),
+    simulatedAutoScaling: getAutoScalingState ? getAutoScalingState() : null,
     localRates: getRates(),
     // Các field AWS để trống — dashboard sẽ không hiển thị panel AWS
     ec2Instances: [],

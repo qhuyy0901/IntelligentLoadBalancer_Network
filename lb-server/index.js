@@ -1,5 +1,4 @@
 
-
 const path = require('path');
 const dotenv = require('dotenv');
 
@@ -16,7 +15,7 @@ const configPath = path.join(__dirname, '../config/servers.json');
 const config = JSON.parse(fs.readFileSync(configPath, 'utf-8'));
 
 console.log("CONFIG LOADED:", config);
-
+console.log(`📦 Mode: ${ENABLE_AWS ? 'AWS (read-only, no proxy to EC2)' : 'LOCAL'}`);
 
 const {
   getNextServer,           // Chọn server tiếp theo theo thuật toán
@@ -31,20 +30,31 @@ const {
   incrementRequestCount    // +1 tổng request đã xử lý
 } = require('./balancer');
 
-const { startHealthChecks } = require('./healthCheck');
 const { logRequest, logFailure, getRates, getRecentRequests, getLoadBalancingMetrics } = require('./logger');
 const { startWebSocketServer } = require('./wsServer');
 
-// ── AutoScaling: chỉ import khi ENABLE_AWS=true ──────────────────────────────
-let startAutoScalingLoop;
-if (ENABLE_AWS) {
-  ({ startAutoScalingLoop } = require('./autoScaling'));
+// ── Health check: chỉ chạy ở Local mode ──────────────────────────────────────
+let startHealthChecks;
+if (!ENABLE_AWS) {
+  ({ startHealthChecks } = require('./healthCheck'));
 }
 
-// Cổng Load Balancer — lấy từ config, mặc định 3000 nếu không có
-const LB_PORT = config.loadBalancer.port || 3000;
+// ── Local Auto Scaling simulation: chỉ chạy ở Local mode ─────────────────────
+let startAutoScalingLoop;
+if (!ENABLE_AWS) {
+  ({ startAutoScalingLoop } = require('./localScaling'));
+}
 
-// Tạo proxy server — xử lý việc chuyển tiếp HTTP request đến backend
+// ── AWS Dashboard read-only handler: chỉ load khi ENABLE_AWS=true ─────────────
+let handleAwsOverview;
+if (ENABLE_AWS) {
+  ({ handleAwsOverview } = require('../aws/awsDashboard'));
+}
+
+// Cổng Load Balancer — lấy từ config, mặc định 8000 nếu không có
+const LB_PORT = config.loadBalancer.port || 8000;
+
+// Tạo proxy server — chỉ dùng ở local mode để forward request đến backend EC2
 const proxy = httpProxy.createProxyServer({});
 
 // ── DEBUG: Gán ID duy nhất cho mỗi request để dễ trace trong console ─────
@@ -93,7 +103,53 @@ const server = http.createServer((req, res) => {
   if (req.url === '/health') {
     console.log(`${id} [FILTER] health check`);
     res.writeHead(200, { 'Content-Type': 'application/json' });
-    return res.end(JSON.stringify({ status: 'ok' }));
+    return res.end(JSON.stringify({ status: 'ok', mode: ENABLE_AWS ? 'aws' : 'local' }));
+  }
+
+  // ── AWS Dashboard API — read-only overview (chỉ khi ENABLE_AWS=true) ────
+  if (req.url === '/api/aws/overview' && req.method === 'GET') {
+    console.log(`${id} [FILTER] /api/aws/overview`);
+    if (!ENABLE_AWS || !handleAwsOverview) {
+      res.writeHead(403, { 'Content-Type': 'application/json' });
+      return res.end(JSON.stringify({ error: 'AWS is disabled. Set ENABLE_AWS=true in .env' }));
+    }
+    return handleAwsOverview(req, res);
+  }
+
+  // ── Traffic Request Log — read-only, dùng cho bảng Client IP ─────────────
+  if (req.url === '/api/lb/requests' && req.method === 'GET') {
+    const requests = getRecentRequests(100).map(r => ({
+      time:       r.time,
+      clientIp:   r.clientIp   || '0.0.0.0',
+      serverId:   r.serverId   || '',
+      serverName: r.serverName || r.serverId || '',
+      duration:   r.duration   || 0
+    }));
+    res.writeHead(200, {
+      'Content-Type':  'application/json',
+      'Cache-Control': 'no-store'
+    });
+    return res.end(JSON.stringify({ requests, total: requests.length }));
+  }
+
+
+  // ── Serve AWS Monitor Dashboard static files ───────────────────────────
+  if (req.url.startsWith('/aws-monitor')) {
+    console.log(`${id} [FILTER] aws-monitor static`);
+    let filePath = req.url.replace('/aws-monitor', '') || '/index.html';
+    if (filePath === '/') filePath = '/index.html';
+    const fullPath = path.join(__dirname, '..', 'dashboard', 'aws-monitor' + filePath);
+    const ext = path.extname(fullPath).toLowerCase();
+    const mimeTypes = { '.html': 'text/html', '.css': 'text/css', '.js': 'application/javascript', '.json': 'application/json', '.png': 'image/png', '.svg': 'image/svg+xml' };
+    fs.readFile(fullPath, (err, data) => {
+      if (err) {
+        res.writeHead(404, { 'Content-Type': 'text/plain' });
+        return res.end('Not Found');
+      }
+      res.writeHead(200, { 'Content-Type': mimeTypes[ext] || 'application/octet-stream' });
+      res.end(data);
+    });
+    return;
   }
 
   // API thống kê cho Dashboard — trả JSON chứa trạng thái server, request gần đây, metrics
@@ -108,13 +164,13 @@ const server = http.createServer((req, res) => {
     }));
   }
 
-  // ── API nhận log từ EC2 backend khi traffic đến qua AWS ALB ───────────
+  // ── API nhận log từ EC2 backend khi traffic thật đi qua ALB ──────────────
   // EC2 gọi POST /lb/aws-log sau mỗi request thật để dashboard cập nhật
+  // AWS mode: serverId có thể là bất kỳ instance ID nào (i-xxxxxxxxxxxxxxxxx)
   if (req.url === '/lb/aws-log' && req.method === 'POST') {
-    // Chỉ xử lý AWS log khi ENABLE_AWS=true
     if (!ENABLE_AWS) {
       res.writeHead(403, { 'Content-Type': 'application/json' });
-      return res.end(JSON.stringify({ error: 'AWS is disabled' }));
+      return res.end(JSON.stringify({ error: 'AWS log endpoint only available in AWS mode' }));
     }
 
     let body = '';
@@ -122,16 +178,14 @@ const server = http.createServer((req, res) => {
     req.on('end', () => {
       try {
         const data = JSON.parse(body);
-        const { serverId, serverName, clientIp, duration, path: reqPath } = data;
+        const { serverId, serverName, clientIp, duration } = data;
 
-        // Validate: chỉ chấp nhận server đã biết
-        const knownIds = config.servers.map(s => s.id);
-        if (!serverId || !knownIds.includes(serverId)) {
+        if (!serverId) {
           res.writeHead(400, { 'Content-Type': 'application/json' });
-          return res.end(JSON.stringify({ error: 'Unknown serverId' }));
+          return res.end(JSON.stringify({ error: 'serverId is required' }));
         }
 
-        // Cập nhật counter và ghi log — giống hệt khi request đi qua Node LB
+        // Cập nhật counter và ghi log — không validate theo servers.json
         incrementRequestCount(serverId);
         logRequest({
           clientIp: clientIp || '0.0.0.0',
@@ -141,7 +195,7 @@ const server = http.createServer((req, res) => {
           duration: Number(duration) || 0
         });
 
-        console.log(`[AWS-ALB] ${clientIp} → ${serverName} (${duration}ms) via ALB`);
+        console.log(`[AWS-ALB] ${clientIp} → ${serverName || serverId} (${duration}ms) via ALB`);
         res.writeHead(200, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({ ok: true }));
       } catch (e) {
@@ -182,13 +236,24 @@ const server = http.createServer((req, res) => {
     }
   }
 
+  // ── AWS MODE: Không proxy trực tiếp qua EC2 IP ───────────────────────────
+  // Traffic thật đi theo đường: User → ALB DNS → Target Group → EC2
+  // Dashboard chỉ monitor/read-only — không làm proxy
+  if (ENABLE_AWS) {
+    console.log(`${id} [AWS] Proxy bị tắt trong AWS mode. Dùng ALB_DNS để gửi traffic thật.`);
+    const albDns = process.env.ALB_DNS || null;
+    res.writeHead(503, { 'Content-Type': 'application/json' });
+    return res.end(JSON.stringify({
+      error: 'Direct proxy disabled in AWS mode',
+      message: 'In AWS mode, send traffic to ALB DNS instead of this load balancer server.',
+      albDns: albDns || 'See ALB_DNS in .env'
+    }));
+  }
 
-  // CÂN BẰNG TẢI CHÍNH — Chỉ đến đây mới thực sự proxy và đếm request
-  // Thuật toán chọn server ở balancer.js: round-robin / least-connections / weighted
-  
+  // ── LOCAL MODE: CÂN BẰNG TẢI CHÍNH ─────────────────────────────────────
+  // Chỉ proxy request khi ENABLE_AWS=false
   console.log(`${id} [PROXY] --> routing to backend`);
 
-  // Gọi balancer để chọn server backend tiếp theo
   const target = getNextServer();
 
   if (!target) {
@@ -241,15 +306,24 @@ const server = http.createServer((req, res) => {
 
 // ── KHỞI ĐỘNG HỆ THỐNG ──────────────────────────────────────────────────
 server.listen(LB_PORT, '0.0.0.0', () => {
-  console.log(`🚀 LB running at http://0.0.0.0:${LB_PORT}`);
+  console.log(`🚀 LB Dashboard running at http://0.0.0.0:${LB_PORT}`);
   console.log(`📦 Mode: ${ENABLE_AWS ? 'AWS' : 'LOCAL'}`);
+  if (ENABLE_AWS) {
+    const albDns = process.env.ALB_DNS;
+    console.log(`☁️  AWS mode: monitoring only. Traffic path: User → ALB → Target Group → EC2`);
+    console.log(`🌐 ALB DNS: ${albDns || '(not set — check ALB_DNS in .env)'}`);
+    console.log(`📊 Dashboard: http://localhost:${LB_PORT}/aws-monitor`);
+  }
 });
 
-startHealthChecks();      // Bắt đầu kiểm tra sức khỏe server mỗi 5 giây
-startWebSocketServer();   // Bắt đầu WebSocket server phát dữ liệu cho Dashboard
-
 if (ENABLE_AWS) {
-  startAutoScalingLoop(); // Mô phỏng Auto Scaling: tăng/giảm số EC2 đang tham gia pool
+  // AWS mode: chỉ chạy AWS read-only polling, không health-check EC2 IP
+  startWebSocketServer();
+  console.log('☁️  AWS mode — no direct EC2 health checks, no local proxy, no auto scaling simulation');
 } else {
-  console.log('☁️  AWS OFF — running in local mode (no AWS SDK, no AutoScaling)');
+  // Local mode: health-check EC2 giả, auto scaling simulation, proxy
+  startHealthChecks();
+  startAutoScalingLoop();
+  startWebSocketServer();
+  console.log('🖥️  Local mode — health checks + auto scaling simulation + proxy active');
 }
