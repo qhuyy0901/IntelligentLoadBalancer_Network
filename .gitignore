@@ -1,1 +1,5 @@
-node_modules 
+node_modules
+.env
+*.pem
+*.mp4
+test/vs code kết nối aws.txt

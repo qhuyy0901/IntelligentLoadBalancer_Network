@@ -1,0 +1,80 @@
+Intelligent Load Balancing
+
+Đồ án cơ sở
+Yêu cầu
+
+Cấu hình Load Balancer.
+
+Các bước thực hiện
+Deploy nhiều EC2 server.
+Tạo Elastic Load Balancer.
+Tạo target group.
+Test phân phối traffic.
+(- Lưu log vào S3.Thu thập access log từ Load Balancer.auto slcaling-Test truy cập website - Cấu hình scaling policy theo CPU- Tạo Application Load Balancer.- Add EC2 vào target group.Test tăng tải.- Add EC2 vào target group.- Tạo Application Load Balancer.)
+
+	
+
+Đồ án chuyên ngành
+Yêu cầu
+AI điều chỉnh thuật toán load balancing.
+
+Các bước thực hiện
+Thu thập log truy cập.
+Phân tích traffic pattern.
+AI phân phối traffic.
+
+
+
+
+Load Balancer cho Web Server
+
+Đồ án cơ sở
+Yêu cầu
+
+Deploy 2 EC2 web server.
+Cấu hình Load Balancer.
+
+Các bước thực hiện
+Tạo 2 EC2 instance.
+Cài Apache hoặc Nginx.
+Tạo Application Load Balancer.
+Tạo target group.
+Add EC2 vào target group.
+Test truy cập website.
+
+Đồ án chuyên ngành
+Yêu cầu
+
+AI phân tích lưu lượng truy cập web.
+
+Các bước thực hiện
+Thu thập access log từ Load Balancer.
+Lưu log vào S3.
+Dùng AI phân tích pattern truy cập.
+Dự đoán traffic spike.
+Điều chỉnh load balancing.
+
+
+
+
+Auto Scaling hệ thống Web
+
+Đồ án cơ sở
+Yêu cầu
+
+Hệ thống tự động tăng giảm server.
+
+Các bước thực hiện
+Tạo Launch Template.
+Tạo Auto Scaling Group.
+Cấu hình scaling policy theo CPU.
+Test tăng tải.
+
+Đồ án chuyên ngành
+Yêu cầu
+
+AI dự đoán traffic.
+Các bước thực hiện
+Thu thập dữ liệu traffic từ CloudWatch.
+Huấn luyện model dự đoán traffic.
+Tạo scaling policy dựa trên AI.
